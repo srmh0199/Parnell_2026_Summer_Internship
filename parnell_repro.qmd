@@ -1,0 +1,314 @@
+
+---
+title: "Parnell Reproductive Report"
+subtitle: "Reproductive Performance Summary"
+author: "<img src='images/parnell.jpeg' width='150' /> <br> Sarah Hills"
+date: "`r Sys.Date()`"
+format:
+  html:
+    page-layout: full
+    theme: flatly
+    df_print: paged
+    toc: true
+    toc-location: left
+    number-sections: false
+    code-fold: true
+execute:
+  message: false
+  warning: false
+  echo: false
+embed-resources: true
+params:
+  event: 
+    label: "Farm Name:"
+    value: "Monte Vista"
+    input: text
+---
+      
+```{r}
+#| label: setup
+#| include: false
+
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(
+  broom,
+  tidyverse,
+  dtplyr,
+  gt,
+  arrow,
+  rmarkdown,
+  lubridate,
+  quarto, 
+  survival,
+  survminer,
+  ggsurvfit,
+  flextable,
+  gtsummary,
+  marginaleffects,
+  scales,
+  zoo,
+  here
+  )
+
+events_formatted <- read_parquet(here::here('data/intermediate_files/events_formatted.parquet'))
+animals <- read_parquet(here::here('data/intermediate_files/animals.parquet'))
+animal_lactations <- read_parquet(here::here('data/intermediate_files/animal_lactations.parquet'))
+
+source(here::here("functions/fxn_load_os_fxns.R"))
+fxn_load_os_fxns()
+
+source('functions/fxn_denos_sarah.R')
+herd_deno <- fxn_denos_sarah(
+  lact_data = animal_lactations, 
+  events_df = events_formatted, 
+  animal_data = animals)
+
+source('functions/fxn_denominators_monthly.R')
+monthly_deno_data <- fxn_get_monthly_denominators(animal_lactations, animals)
+
+cr_url <- "[https://raw.githubusercontent.com/ParnellPharma/ParnellFunctionsPublic/main/parnell_calculate_CR_master.R](https://raw.githubusercontent.com/ParnellPharma/ParnellFunctionsPublic/main/parnell_calculate_CR_master.R)"
+source(cr_url)
+
+date_max_pull <- max(events_formatted$date_event, na.rm = TRUE)
+
+farm_name <- if (!is.null(params$event) && params$event != "") {
+  params$event
+} else {
+  unique(events_formatted$location_event)[1]
+}
+
+farm_name <- basename(farm_name)
+farm_name <- tools::file_path_sans_ext(farm_name)
+farm_name <- str_replace_all(farm_name, "[_|-]", " ") |> str_to_title()
+
+```
+
+
+
+```{r}
+#| label: Eligibility
+#| echo: false
+
+vwp <- 50
+
+periods_df <- tibble(
+  period_id = 1:24,
+  period_end = date_max_pull - (0:23 * 21),
+  period_start = date_max_pull - (0:23 * 21) - 20
+)
+
+herd_intervals <- animal_lactations |>
+  select(id_animal_lact, date_fresh, date_archive, date_dry, lact_number) |>
+  mutate(
+    lact_group = case_when(
+      lact_number == 1 ~ "Lact 1",
+      lact_number == 2 ~ "Lact 2",
+      lact_number >= 3 ~ "Lact 3+",
+      TRUE ~ "Other"
+    )
+  )
+
+cow_status <- events_formatted |>
+  filter(event %in% c("BRED", "OPEN", "DNB")) |>
+  group_by(id_animal_lact) |>
+  summarise(
+    last_preg = max(date_event[event == "BRED"], na.rm = TRUE),
+    last_open = max(date_event[event == "OPEN"], na.rm = TRUE),
+    last_dnb = max(date_event[event == "DNB"], na.rm = TRUE),
+    .groups = "drop"
+  ) |>
+  mutate(across(c(last_preg, last_open, last_dnb), ~if_else(is.infinite(.x), as.Date(NA), .x)))
+
+eligible_cows_by_period <- periods_df |>
+  cross_join(herd_intervals) |>
+  left_join(cow_status, by = "id_animal_lact") |>
+  filter(
+    lact_number > 0,
+    date_fresh <= period_end,
+    (is.na(date_archive) | date_archive >= period_end),
+    (is.na(date_dry) | date_dry > period_end),
+    as.numeric(period_start - date_fresh) > vwp,
+    is.na(last_preg) | (!is.na(last_open) & last_open > last_preg) | (last_preg > period_start),
+    is.na(last_dnb) | last_dnb > period_end
+  ) |>
+  group_by(period_id, id_animal_lact) |>
+  slice_max(date_fresh, with_ties = FALSE) |>
+  ungroup()
+
+
+```
+
+
+
+```{r}
+#| label: Insemination Rate
+#| echo: false
+
+bred_flags <- events_formatted |>
+  filter(event == "BRED") |>
+  select(id_animal_lact, date_event, R) |>
+  cross_join(periods_df) |>
+  filter(date_event >= period_start, date_event <= period_end) |>
+  distinct(id_animal_lact, period_id) |>
+  mutate(is_bred = TRUE)
+
+bred_report <- eligible_cows_by_period |>
+  left_join(bred_flags, by = c("id_animal_lact", "period_id")) |>
+  mutate(is_bred = replace_na(is_bred, FALSE))
+
+ir_summary <- bred_report |>
+  group_by(period_id, period_start, period_end) |>
+  summarise(
+    n_eligible = n(),
+    n_bred = sum(is_bred),
+    insemination_rate = n_bred / n_eligible,
+    .groups = "drop"
+  )
+
+ir_summary |>
+  arrange(desc(period_start)) |>
+  gt() |>
+  tab_header(
+    title = "Insemination Rate Report",
+    subtitle = "Calculated per 21-Day Period"
+  ) |>
+  cols_label(
+    period_id = "Period",
+    period_start = "Start",
+    period_end = "End",
+    n_eligible = "Eligible Cows",
+    n_bred = "Bred Cows",
+    insemination_rate = "IR %"
+  ) |>
+  fmt_percent(columns = insemination_rate, decimals = 1)
+```
+
+
+
+```{r}
+#| label: Conception Rate
+#| echo: false
+
+breeding_outcomes <- events_formatted |>
+  filter(event == "BRED") |>
+  select(id_animal_lact, date_event, R) |>
+  mutate(
+    is_conception = if_else(R %in% c("P", "A"), TRUE, FALSE, missing = FALSE)
+  )
+
+period_services <- breeding_outcomes |>
+  cross_join(periods_df) |>
+  filter(date_event >= period_start, date_event <= period_end) |>
+  left_join(herd_intervals |> select(id_animal_lact, lact_group), by = "id_animal_lact")
+
+cr_summary_grouped <- period_services |>
+  filter(lact_group %in% c("Lact 1", "Lact 2", "Lact 3+")) |>
+  group_by(period_id, period_start, period_end, lact_group) |>
+  summarise(
+    n_conceptions = sum(is_conception),
+    n_services = n(),
+    conception_rate = n_conceptions / n_services,
+    .groups = "drop"
+  )
+
+cr_wide <- cr_summary_grouped |>
+  select(period_id, period_start, period_end, lact_group, conception_rate) |>
+  pivot_wider(names_from = lact_group, values_from = conception_rate)
+
+herd_avg_cr <- cr_summary_grouped |>
+  group_by(period_id) |>
+  summarise(Overall = sum(n_conceptions) / sum(n_services), .groups = "drop")
+
+cr_final <- cr_wide |> left_join(herd_avg_cr, by = "period_id")
+
+cr_final |>
+  arrange(desc(period_start)) |>
+  gt() |>
+  tab_header(
+    title = "Conception Rate by Lactation Group",
+    subtitle = "Percent Conception (P & A) per 21-Day Period"
+  ) |>
+  cols_label(period_id = "Period", period_start = "Start Date", period_end = "End Date", Overall = "Herd Avg") |>
+  fmt_percent(columns = c("Lact 1", "Lact 2", "Lact 3+", "Overall"), decimals = 1) |>
+  tab_spanner(label = "Lactation Groups", columns = c("Lact 1", "Lact 2", "Lact 3+"), id = "lact_spanner") |>
+  tab_style(style = cell_text(align = "center"), locations = cells_column_spanners(spanners = "lact_spanner")) |>
+  grand_summary_rows(
+    columns = c("Lact 1", "Lact 2", "Lact 3+", "Overall"),
+    fns = list(Average = ~mean(., na.rm = TRUE)),
+    fmt = list(~fmt_percent(., decimals = 1))
+  ) |>
+  sub_missing(columns = everything(), missing_text = "0.0%") |>
+  tab_options(table.border.left.style = "none", stub.border.style = "none")
+
+
+```
+
+
+
+```{r}
+#| label: Pregnancy Rate
+#| echo: false
+
+conception_events <- events_formatted |>
+  filter(event == "BRED", R %in% c("P", "A")) |>
+  select(id_animal_lact, date_event) |>
+  mutate(is_preg_event = TRUE)
+
+pr_report <- eligible_cows_by_period |>
+  left_join(conception_events, by = "id_animal_lact") |>
+  mutate(
+    is_preg = if_else(!is.na(is_preg_event) & date_event >= period_start & date_event <= period_end, TRUE, FALSE)
+  ) |>
+  distinct(period_id, id_animal_lact, .keep_all = TRUE)
+
+pr_summary <- pr_report |>
+  group_by(period_id, period_start, period_end, lact_group) |>
+  summarise(
+    n_eligible = n(),
+    n_pregs = sum(is_preg),
+    preg_rate = n_pregs / n_eligible,
+    .groups = "drop"
+  )
+
+pr_wide <- pr_summary |>
+  filter(lact_group %in% c("Lact 1", "Lact 2", "Lact 3+")) |>
+  select(period_id, period_start, period_end, lact_group, preg_rate) |>
+  pivot_wider(names_from = lact_group, values_from = preg_rate)
+
+herd_avg_pr <- pr_summary |>
+  group_by(period_id) |>
+  summarise(Overall = sum(n_pregs) / sum(n_eligible), .groups = "drop")
+
+pr_final <- pr_wide |> left_join(herd_avg_pr, by = "period_id")
+
+pr_final |>
+  arrange(desc(period_start)) |>
+  gt() |>
+  tab_header(
+    title = "Pregnancy Rate by Lactation Group",
+    subtitle = "Confirmed Conceptions / Eligible Cows per 21-Day Period"
+  ) |>
+  cols_label(period_id = "Period", period_start = "Start Date", period_end = "End Date", Overall = "Herd Avg") |>
+  fmt_percent(columns = c("Lact 1", "Lact 2", "Lact 3+", "Overall"), decimals = 1) |>
+  tab_spanner(label = "Lactation Groups", columns = c("Lact 1", "Lact 2", "Lact 3+"), id = "lact_spanner") |>
+  tab_style(style = cell_text(align = "center"), locations = cells_column_spanners(spanners = "lact_spanner")) |>
+  grand_summary_rows(
+    columns = c("Lact 1", "Lact 2", "Lact 3+", "Overall"),
+    fns = list(Average = ~mean(., na.rm = TRUE)),
+    fmt = list(~fmt_percent(., decimals = 1))
+  ) |>
+  sub_missing(columns = everything(), missing_text = "0.0%") |>
+  tab_options(table.border.left.style = "none", stub.border.style = "none")
+```
+
+
+
+```{r}
+bred_events <- events_formatted |> 
+  filter(event %in% c("BRED"))
+
+cr_report<-bred_events%>%
+           fxn_create_CR_reports(grp_vars = c('location_event', 'lact_group', 'Rstandard'))
+```
+
+

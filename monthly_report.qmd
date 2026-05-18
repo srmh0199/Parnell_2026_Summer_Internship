@@ -1,0 +1,209 @@
+---
+title: "Monte Vista Dairy"
+subtitle: "Monthly Report"
+author: "<img src='milestones_dairy/images/ac logo.jpeg' width='150' /> <br> Animal Clinic LLC"
+date: "`r Sys.Date()`"
+format:
+  html:
+    page-layout: full
+    theme: flatly
+    df_print: paged
+    toc: true
+    toc-location: left
+    number-sections: false
+    code-fold: true
+execute:
+  message: false
+  warning: false
+  echo: false
+embed-resources: true
+params:
+  event:
+---
+
+```{r}
+#| label: setup
+#| include: false
+
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(
+  broom,
+  tidyverse,
+  dtplyr,
+  gt,
+  arrow,
+  rmarkdown,
+  lubridate,
+  quarto, 
+  arrow,
+  survival,
+  survminer,
+  ggsurvfit,
+  flextable,
+  gtsummary,
+  marginaleffects,
+  scales,
+  zoo,
+  here
+  )
+
+events_formatted <- read_parquet(here::here('data/intermediate_files/events_formatted.parquet'))
+
+animals <- read_parquet(here::here('data/intermediate_files/animals.parquet'))
+
+animal_lactations<-read_parquet(here::here('data/intermediate_files/animal_lactations.parquet'))
+
+# load GC's functions
+source(here::here("functions/fxn_load_os_fxns.R"))
+fxn_load_os_fxns()
+
+source('functions/fxn_denos_sarah.R')
+herd_deno <- fxn_denos_sarah(
+  lact_data = animal_lactations, 
+  events_df = events_formatted, 
+  animal_data = animals)
+
+source('functions/fxn_denominators_monthly.R')
+monthly_deno_data <- fxn_get_monthly_denominators(animal_lactations, animals)
+
+# Load Parnell CR fucntions from Github
+cr_url <- "https://raw.githubusercontent.com/ParnellPharma/ParnellFunctionsPublic/main/parnell_calculate_CR_master.R"
+source(cr_url)
+
+# create variables for inline code
+farm_name <- unique(events_formatted$location_event)
+
+date_max_pull <- max(events_formatted$date_event, na.rm = TRUE)
+date_min_pull <- date_max_pull - years(2)
+
+
+farm_name <- basename(farm_name)
+
+farm_name <- tools::file_path_sans_ext(farm_name)
+
+farm_name <- str_replace_all(farm_name, "[_|-]", " ") |> str_to_title()
+
+
+```
+
+# Report for `r farm_name`
+
+-   This report shows data from 
+   `r date_min_pull()` to `r date_max_pull`.
+
+# Herd Demographics:
+
+```{r}
+# Denominator files:
+denos <-read_parquet(here::here('data/intermediate_files/herd_denominators.parquet'))
+
+denos_dim <-read_parquet(here::here('data/intermediate_files/herd_dim_denominators.parquet'))
+
+denos_season <- read_parquet(here::here('data/intermediate_files/herd_season_denominators.parquet'))
+
+
+```
+
+
+
+
+```{r}
+#| label: solution_data
+#| echo: TRUE
+
+
+# 0. Configuration
+fresh_dates <- events_formatted %>%
+  filter(event == "BORN") %>%
+  group_by(id_animal, id_animal_lact) %>%
+  summarise(date_fresh = min(date_event, na.rm = TRUE), .groups = "drop")
+
+events_formatted <- events_formatted %>%
+  left_join(
+    animals %>% select(id_animal, date_left, date_sold, date_died),
+    by = "id_animal"
+  )
+
+all_lesions <- c(
+  "dd", "footrot", "wld", "sole_ulcer", "injury",
+  "cork", "other", "hemorrhage", "sole_fracture",
+  "toe_ulcer", "thin", "inf", "noninf",
+  "toe", "axial", "lesion"
+)
+
+diseases <- c("inf", "noninf", "lesion")
+
+# 1. Format
+lame_data <- events_formatted %>%
+  filter(event %in% c("LAME", "TRIM"))
+
+lame_data <- lame_data |> 
+  select(id_animal, id_animal_lact, date_left, lact_number, lact_group, 
+         lact_group_basic, lact_group_5, event, location_event, dim_event, protocols_letters1, remark_letters1, date_event)
+
+# 2. Lesion data
+lame_data <- lame_data |> 
+  fxn_code_lesions(
+    event_var    = event,
+    protocol_var = protocols_letters1,
+    remark_var   = remark_letters1
+  ) 
+
+lame_data <- lame_data |> 
+ mutate(
+   noninf = case_when(
+      str_detect(protocols_letters1, "^Ab") ~ 1,
+      TRUE ~ 0   # default for all other rows
+    )
+  )
+
+solution_data <- lame_data|>
+  fxn_collapse_lesions(lesions = all_lesions) |>
+  fxn_trim_vars(
+    location_event,
+    id_animal,
+    date_var     = date_event,
+    trimonly_var = trimonly
+  ) |>
+  fxn_dz_status(
+    disease_cols = diseases,
+    event_filter = trimonly == 0,
+    gap = 1
+  )
+
+# 3. Culling
+
+solution_data <- solution_data %>%
+  group_by(id_animal) %>%
+  arrange(date_event, .by_group = TRUE) %>%
+  mutate(
+    next_event_date = lead(date_event),
+
+    culled_last_trim = if_else(
+      trimonly == 1 & !is.na(date_left) & (is.na(next_event_date) | next_event_date >= date_left),
+      1L, 0L
+    )
+  ) %>%
+  ungroup() %>%
+  select(-next_event_date)
+
+solution_data <- solution_data |> 
+  mutate(
+    date_censor = max(date_event, na.rm = TRUE),
+    days_to_cull = as.numeric(date_left - date_event),
+    culled_ever = if_else(!is.na(days_to_cull), 1, 0),
+    days_censor_cull = as.numeric(if_else(!is.na(date_left), date_left, date_censor) - date_event),
+    culled_30   = if_else(!is.na(days_to_cull) & days_to_cull <= 30, 1, 0),
+    dim_boxes     = case_when(
+                    dim_event >= 270 ~ ">270",
+                    dim_event >= 211 ~ "211-270",
+                    dim_event >= 151 ~ "151-210",
+                    dim_event >= 91  ~ "91-150",
+                    dim_event >= 30  ~ "30-90",
+                    dim_event >= 0   ~ "<30",
+                    TRUE             ~ NA_character_
+                  ),
+  ) 
+
+```
+

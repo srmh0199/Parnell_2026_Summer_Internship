@@ -1,0 +1,105 @@
+Event,Protocols,event_type,count_rows
+ABCESS,NA,unknown,244
+ABORT,NA,repro,1179
+APOYO,BANAMINE.IV,unknown,5
+APOYO,Bovicalc.PO,unknown,127
+APOYO,YMCP.PO,unknown,412
+APOYO,NA,unknown,1
+BLOODY,NA,health,467
+BORN,NA,phase_parameter,17694
+BRED,NA,repro,25953
+BULLPEN,NA,repro,1
+CALFVAC,NA,vac,3964
+CALVINJ,PENG BAN,unknown,30
+CALVINJ,NA,unknown,2
+CHECK,NA,repro,1795
+COMMENT,NA,unknown,850
+CULL,NA,management,1
+CULTURE,Clinical,health,991
+CULTURE,S.AUREUS,health,150
+CULTURE,NA,health,137
+DA,DA No treat,health,2
+DA,PEN G/GLYCOL,health,4
+DA,POLYFLEX.IM,health,24
+DAIRY,NA,unknown,9
+DELAY,NA,unknown,3
+DIARHEA,ALBON ORALl,health,4
+DIARHEA,BloodyGut,health,1
+DIARHEA,NO DRUGS,health,1813
+DIARHEA,NA,health,2
+DIED,NA,lact_parameter,854
+DNB,NA,repro,2558
+DOWN,DOWN,health,212
+DOWN,NA,health,28
+DRY,DRYLCOX.IMM,lact_parameter,1
+DRY,Dry Soma NT,lact_parameter,42
+DRY,ORBEN_DRY.IMM,lact_parameter,9
+DRY,SPECTROMASTDC,lact_parameter,5724
+FAT,NA,unknown,495
+FOOTROT,ALBON ORAL,health,2
+FOOTROT,EXCEDE,health,147
+FOOTROT,PEN.ALB,health,3
+FOOTROT,NA,health,6
+FRSTBIT,FROST,unknown,13
+GOHOME,NA,management,4472
+HEAT,NA,repro,111
+INJURY,No Treat,health,133
+INJURY,PENG3 BAN2,health,5
+INJURY,banamine,health,19
+INJURY,NA,health,11
+KETOSIS,GLYCOL,health,3
+LAME,Leg-AboveFoot,health,8
+LAME,Sole Ulcer,health,3
+LAME,ThinSoleOverw,health,1
+LAME,ToeNecrsAbsce,health,1
+LAME,NA,health,7
+LOWBAG,NA,unknown,300
+MAST,NO TREATMENT,health,1848
+MAST,SPECTRA-LC.IM,health,1176
+MAST,NA,health,22
+METR,EXCEDE-BOE,health,147
+METR,EXENEL.IM,health,27
+METR,PEN G,health,141
+METR,POLYFLEX.IM,health,696
+MF,CMPK,health,9
+MF,YMCP.PO,health,104
+MF,NA,health,27
+MOVE,NA,repro,43049
+OK,NA,repro,39843
+OPEN,NA,repro,5166
+PINKEYE,SPECTROMAST,health,58
+PINKEYE,NA,health,316
+PNEU,BIOMYCN4 BAN2,health,562
+PNEU,Draxxin KP,health,556
+PNEU,EXCENEL.Beef,health,235
+PNEU,NT BEEF,health,48
+PNEU,POLYFLEX.IM,health,470
+PNEU,draxxin,health,119
+PNEU,nuflor,health,2679
+PNEU,zuprevo,health,7
+PNEU,NA,health,994
+PREG,NA,repro,20969
+PREV,NA,repro,592
+RECK,NA,repro,604
+RESULT,BHB.Result,measure,1
+RP,EXENEL.IM,health,39
+RP,PEN G,health,171
+RP,POLYFLEX.IM,health,848
+SALE,NA,unknown,151
+SOLD,NA,lact_parameter,15832
+SYSMAST,Biomycin,health,48
+SYSMAST,EXENEL.SQ,health,461
+SYSMAST,SPECTRA-LC.IM,health,174
+TEAT3,NA,management,339
+TOAI,NA,unknown,2461
+TOCLOSE,NA,management,8877
+TOGROWR,NA,management,3361
+TRIM,NA,health,4890
+VACC,Pre-Breeding,vac,2733
+VACC,NA,vac,6456
+VACC3W,NA,vac,2352
+WART,WRAP,unknown,90
+WEIGHTS,peng_oil,unknown,480
+WEIGHTS,NA,unknown,6419
+WELL,NA,management,6286
+XID,NA,management,5

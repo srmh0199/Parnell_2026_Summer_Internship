@@ -1,0 +1,44 @@
+---
+title: "Parnell Summer Project 2026"
+format: html
+---
+
+## What question would you like to answer?
+
+What are the KPIs of an individual dairy? How do they compare to industry atandards?
+- CR, PR, Abortion Rate
+- %Pregnant by 100 DIM, 150 DIM, 200 DIM
+- What protocol is the most succesul on the dairy? (Requires the dairy to be correctly putting codes in for chalk vs tai vs other)
+  - timing of breeding as marker for protocol
+
+Across multiple herds (using MySynch?) how does a herd compare?
+- Shiny app to compare CR, PR and abortion rate across herds in an anonymized way?
+
+## Why is that question relevant to producers or the dairy industry?
+
+KPIs are useful to find areas of improvement and pinpoint where reproductive failures may be occurring. Industry standards for KPIs are helpful but having real world examples of other dairies performance can be more compelling for producers. 
+
+## What data would you need for this project?
+
+All reproductive events with animal IDs, dates, lact group. As well as total animals within a herd at a given time (denominators)
+
+https://github.com/nora-lvr/DairyHealthDataProcessingSimple 
+
+Step 0 - W9, hours per week?, start week? zoom weekly on thur 12:30
+
+Step 1 - What Herd Management systems are running on YOUR farms: DC305 and amilcor
+
+Step 2 - Logistics of connecting to Parnell data
+
+Step 3 - Wrangle!
+
+Step 4 - Reports Quarto/Shiny
+
+## How do you plan to let your target audience know your report exists and educate them about how to use it? (i.e. would you present it at a conference? Write an article about it?)
+
+-   At a more local level I would advertise with my producers.
+
+    -   Details??
+        - Producer meetings to demonstrate the report and hopefully get producer buy in. We already produce monthly reports (mostly for transition             disease monitoring so adding a repro report will hopefully be accepted well)
+
+-   I would be open to presenting at a conference or publishing.
