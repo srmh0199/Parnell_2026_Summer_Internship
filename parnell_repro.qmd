@@ -66,8 +66,9 @@ herd_deno <- fxn_denos_sarah(
 source('functions/fxn_denominators_monthly.R')
 monthly_deno_data <- fxn_get_monthly_denominators(animal_lactations, animals)
 
-cr_url <- "[https://raw.githubusercontent.com/ParnellPharma/ParnellFunctionsPublic/main/parnell_calculate_CR_master.R](https://raw.githubusercontent.com/ParnellPharma/ParnellFunctionsPublic/main/parnell_calculate_CR_master.R)"
-source(cr_url)
+# cr_url <- "[https://raw.githubusercontent.com/ParnellPharma/ParnellFunctionsPublic/main/parnell_calculate_CR_master.R](https://raw.githubusercontent.com/ParnellPharma/ParnellFunctionsPublic/main/parnell_calculate_CR_master.R)"
+# source(cr_url)
+source_url('https://raw.githubusercontent.com/ParnellPharma/ParnellFunctionsPublic/refs/heads/main/parnell_calculate_CR_master.R')
 
 date_max_pull <- max(events_formatted$date_event, na.rm = TRUE)
 
