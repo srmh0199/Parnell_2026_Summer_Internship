@@ -90,7 +90,7 @@ farm_name <- str_replace_all(farm_name, "[_|-]", " ") |> str_to_title()
 #| label: Eligibility
 #| echo: false
 
-vwp <- 50
+vwp <- 50 #justification for this number?
 
 periods_df <- tibble(
   period_id = 1:24,
@@ -113,8 +113,8 @@ cow_status <- events_formatted |>
   filter(event %in% c("BRED", "OPEN", "DNB")) |>
   group_by(id_animal_lact) |>
   summarise(
-    last_preg = max(date_event[event == "BRED"], na.rm = TRUE),
-    last_open = max(date_event[event == "OPEN"], na.rm = TRUE),
+    last_preg = max(date_event[event == "BRED"], na.rm = TRUE), #why is this named last "preg" rather than "bred"?
+    last_open = max(date_event[event == "OPEN"], na.rm = TRUE), 
     last_dnb = max(date_event[event == "DNB"], na.rm = TRUE),
     .groups = "drop"
   ) |>
@@ -124,16 +124,16 @@ eligible_cows_by_period <- periods_df |>
   cross_join(herd_intervals) |>
   left_join(cow_status, by = "id_animal_lact") |>
   filter(
-    lact_number > 0,
-    date_fresh <= period_end,
-    (is.na(date_archive) | date_archive >= period_end),
-    (is.na(date_dry) | date_dry > period_end),
-    as.numeric(period_start - date_fresh) > vwp,
-    is.na(last_preg) | (!is.na(last_open) & last_open > last_preg) | (last_preg > period_start),
-    is.na(last_dnb) | last_dnb > period_end
+    lact_number > 0, #not a heifer
+    date_fresh <= period_end, #cow has a fresh date . . . what if this is missing?
+    (is.na(date_archive) | date_archive >= period_end), #not archived or archive date after period end
+    (is.na(date_dry) | date_dry > period_end), #not dry or date_dry after period end
+    as.numeric(period_start - date_fresh) > vwp, #not within vwp . . . should this be >= or >
+    is.na(last_preg) | (!is.na(last_open) & last_open > last_preg) | (last_preg > period_start), #??? readability, I think renaming "last_preg to last_bred fixes it"
+    is.na(last_dnb) | last_dnb > period_end #is not a dnb
   ) |>
-  group_by(period_id, id_animal_lact) |>
-  slice_max(date_fresh, with_ties = FALSE) |>
+  group_by(period_id, id_animal_lact) |> 
+  slice_max(date_fresh, with_ties = FALSE) |> #control duplicate fresh dates
   ungroup()
 
 
@@ -194,7 +194,7 @@ breeding_outcomes <- events_formatted |>
   filter(event == "BRED") |>
   select(id_animal_lact, date_event, R) |>
   mutate(
-    is_conception = if_else(R %in% c("P", "A"), TRUE, FALSE, missing = FALSE)
+    is_conception = if_else(R %in% c("P", "A", "E"), TRUE, FALSE, missing = FALSE) #what happens with the "R" (preg to previous)" should check
   )
 
 period_services <- breeding_outcomes |>
@@ -251,7 +251,7 @@ cr_final |>
 #| echo: false
 
 conception_events <- events_formatted |>
-  filter(event == "BRED", R %in% c("P", "A")) |>
+  filter(event == "BRED", R %in% c("P", "A")) |> 
   select(id_animal_lact, date_event) |>
   mutate(is_preg_event = TRUE)
 
