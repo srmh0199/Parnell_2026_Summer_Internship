@@ -47,7 +47,8 @@ pacman::p_load(
   marginaleffects,
   scales,
   zoo,
-  here
+  here,
+  devtools
   )
 
 events_formatted <- read_parquet(here::here('data/intermediate_files/events_formatted.parquet'))
@@ -251,7 +252,7 @@ cr_final |>
 #| echo: false
 
 conception_events <- events_formatted |>
-  filter(event == "BRED", R %in% c("P", "A")) |> 
+  filter(event == "BRED", R %in% c("P", "A")) |> #should we add E here
   select(id_animal_lact, date_event) |>
   mutate(is_preg_event = TRUE)
 
