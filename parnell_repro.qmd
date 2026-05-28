@@ -66,8 +66,8 @@ herd_deno <- fxn_denos_sarah(
 source('functions/fxn_denominators_monthly.R')
 monthly_deno_data <- fxn_get_monthly_denominators(animal_lactations, animals)
 
-cr_url <- "[https://raw.githubusercontent.com/ParnellPharma/ParnellFunctionsPublic/main/parnell_calculate_CR_master.R](https://raw.githubusercontent.com/ParnellPharma/ParnellFunctionsPublic/main/parnell_calculate_CR_master.R)"
-source(cr_url)
+#cr_url <- "[https://raw.githubusercontent.com/ParnellPharma/ParnellFunctionsPublic/main/parnell_calculate_CR_master.R](https://raw.githubusercontent.com/ParnellPharma/ParnellFunctionsPublic/main/parnell_calculate_CR_master.R)"
+#source(cr_url)
 
 date_max_pull <- max(events_formatted$date_event, na.rm = TRUE)
 
@@ -244,6 +244,44 @@ cr_final |>
 ```
 
 
+```{r}
+#| label: CR Graph
+#| echo: false
+
+cr_summary_grouped |>
+  filter(period_start < sort(unique(period_start), decreasing = TRUE)[2]) |>
+  ggplot(aes(x = period_start, y = conception_rate, color = lact_group, group = lact_group)) +
+  geom_line(linewidth = 1) +
+  geom_point() +
+  scale_y_continuous(labels = scales::percent) +
+  labs(
+    title = "Conception Rate Trend by Lactation Group",
+    subtitle = "Calculated per 21-Day Period (Excluding two most recent periods)",
+    x = "Period Start Date",
+    y = "Conception Rate",
+    color = "Lactation Group"
+  ) +
+  theme_minimal()
+
+
+cr_summary_grouped |>
+  # Still filtering out the last two periods as requested
+  filter(period_start < sort(unique(period_start), decreasing = TRUE)[2]) |>
+  ggplot(aes(x = conception_rate, fill = lact_group)) +
+  geom_density(alpha = 0.5) +
+  scale_x_continuous(labels = scales::percent) +
+  labs(
+    title = "Distribution of Conception Rates by Lactation Group",
+    subtitle = "Density plot of CR across all periods (excluding last two)",
+    x = "Conception Rate",
+    y = "Density",
+    fill = "Lactation Group"
+  ) +
+  theme_minimal()
+```
+
+
+
 
 ```{r}
 #| label: Pregnancy Rate
@@ -301,14 +339,148 @@ pr_final |>
   tab_options(table.border.left.style = "none", stub.border.style = "none")
 ```
 
+```{r}
+#| label: PR Graph
+#| echo: false
+
+pr_summary |>
+  filter(lact_group %in% c("Lact 1", "Lact 2", "Lact 3+")) |>
+  # Exclude the two most recent periods
+  filter(period_start < sort(unique(period_start), decreasing = TRUE)[2]) |>
+  ggplot(aes(x = period_start, y = preg_rate, color = lact_group, group = lact_group)) +
+  geom_line(linewidth = 1) +
+  geom_point() +
+  scale_y_continuous(labels = scales::percent) +
+  labs(
+    title = "Pregnancy Rate Trend by Lactation Group",
+    subtitle = "Calculated per 21-Day Period (Excluding two most recent periods)",
+    x = "Period Start Date",
+    y = "Pregnancy Rate",
+    color = "Lactation Group"
+  ) +
+  theme_minimal()
+
+pr_summary |>
+  filter(lact_group %in% c("Lact 1", "Lact 2", "Lact 3+")) |>
+  # Exclude the two most recent periods
+  filter(period_start < sort(unique(period_start), decreasing = TRUE)[2]) |>
+  ggplot(aes(x = preg_rate, fill = lact_group)) +
+  geom_density(alpha = 0.5) +
+  scale_x_continuous(labels = scales::percent) +
+  labs(
+    title = "Distribution of Pregnancy Rates by Lactation Group",
+    subtitle = "Density plot of PR across all periods (excluding last two)",
+    x = "Pregnancy Rate",
+    y = "Density",
+    fill = "Lactation Group"
+  ) +
+  theme_minimal()
+
+```
+
 
 
 ```{r}
-bred_events <- events_formatted |> 
-  filter(event %in% c("BRED"))
+#| label: Abortions
+#| echo: false
 
-cr_report<-bred_events%>%
-           fxn_create_CR_reports(grp_vars = c('location_event', 'lact_group', 'Rstandard'))
+all_pregnancies <- events_formatted |>
+  filter(event == "BRED", R %in% c("P", "A")) |>
+  mutate(
+    month_bred = floor_date(date_event, "month"),
+    is_abortion = if_else(R == "A", 1, 0)
+  )
+
+# 2. Summarize by cohort
+abortion_cohort_table <- all_pregnancies |>
+  group_by(month_bred) |>
+  summarise(
+    total_pregnancies = n(),
+    n_abortions = sum(is_abortion),
+    abortion_rate = n_abortions / total_pregnancies,
+    .groups = "drop"
+  ) |>
+  arrange((month_bred)) |>
+  # Exclude current month as it is incomplete
+  filter(month_bred < floor_date(Sys.Date(), "month"))
+
+abortion_cohort_table |>
+  gt() |>
+  tab_header(
+    title = "Monthly Abortion Cohort Analysis",
+    subtitle = "Abortion rate based on the month of original conception"
+  ) |>
+  cols_label(
+    month_bred = "Month Bred",
+    total_pregnancies = "Total Pregnancies (P+A)",
+    n_abortions = "Abortions (A)",
+    abortion_rate = "Abortion Rate"
+  ) |>
+  fmt_percent(columns = abortion_rate, decimals = 1) |>
+  fmt_date(columns = month_bred, date_style = "yMMM") |>
+  tab_options(table.border.left.style = "none", stub.border.style = "none")
+
 ```
+
+
+```{r}
+#| label: Abortion Graph
+#| echo: false
+
+abortion_cohort_table |>
+  ggplot(aes(x = month_bred, y = abortion_rate)) +
+  geom_line(color = "steelblue", linewidth = 1) +
+  geom_point(color = "steelblue", size = 2) +
+  scale_y_continuous(labels = scales::percent) +
+  scale_x_date(date_labels = "%b %Y", date_breaks = "2 months") +
+  labs(
+    title = "Abortion Rate by Breeding Cohort",
+    subtitle = "Percentage of pregnant cohorts (P+A) that resulted in an abortion",
+    x = "Month Bred",
+    y = "Abortion Rate"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+
+
+```{r}
+#| label: R Mystery
+#| echo: false
+
+recheck_events <- events_formatted |>
+  filter(R == "R") |>
+  select(id_animal_lact, date_r = date_event)
+
+all_bred_events <- events_formatted |>
+  filter(event == "BRED") |>
+  select(id_animal_lact, date_bred = date_event)
+
+prior_bred <- recheck_events |>
+  left_join(all_bred_events, by = "id_animal_lact") |>
+  filter(date_bred < date_r) |>
+  group_by(id_animal_lact, date_r) |>
+  slice_max(date_bred, with_ties = FALSE) |>
+  rename(date_prev_bred = date_bred) |>
+  ungroup()
+
+next_bred <- recheck_events |>
+  left_join(all_bred_events, by = "id_animal_lact") |>
+  filter(date_bred > date_r) |>
+  group_by(id_animal_lact, date_r) |>
+  slice_min(date_bred, with_ties = FALSE) |>
+  rename(date_next_bred = date_bred) |>
+  ungroup()
+
+recheck_timeline <- prior_bred |>
+  left_join(next_bred |> select(id_animal_lact, date_r, date_next_bred), 
+            by = c("id_animal_lact", "date_r"))
+
+head(recheck_timeline)
+
+```
+
+
 
 
