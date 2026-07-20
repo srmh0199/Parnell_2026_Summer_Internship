@@ -112,12 +112,12 @@ cow_status <- events_formatted |>
   filter(event %in% c("BRED", "OPEN", "DNB")) |>
   group_by(id_animal_lact) |>
   summarise(
-    last_preg = max(date_event[event == "BRED"], na.rm = TRUE),
+    last_bred = max(date_event[event == "BRED"], na.rm = TRUE),
     last_open = max(date_event[event == "OPEN"], na.rm = TRUE),
     last_dnb = max(date_event[event == "DNB"], na.rm = TRUE),
     .groups = "drop"
   ) |>
-  mutate(across(c(last_preg, last_open, last_dnb), ~if_else(is.infinite(.x), as.Date(NA), .x)))
+  mutate(across(c(last_bred, last_open, last_dnb), ~if_else(is.infinite(.x), as.Date(NA), .x)))
 
 eligible_cows_by_period <- periods_df |>
   cross_join(herd_intervals) |>
@@ -128,7 +128,7 @@ eligible_cows_by_period <- periods_df |>
     (is.na(date_archive) | date_archive >= period_end),
     (is.na(date_dry) | date_dry > period_end),
     as.numeric(period_start - date_fresh) > vwp,
-    is.na(last_preg) | (!is.na(last_open) & last_open > last_preg) | (last_preg > period_start),
+    is.na(last_bred) | (!is.na(last_open) & last_open > last_bred) | (last_bred > period_start),
     is.na(last_dnb) | last_dnb > period_end
   ) |>
   group_by(period_id, id_animal_lact) |>
@@ -183,6 +183,39 @@ ir_summary |>
   fmt_percent(columns = insemination_rate, decimals = 1)
 ```
 
+```{r}
+#| label: Percent Rebreds
+#| echo: false
+
+rebreed_summary <- events_formatted |>
+  filter(event == "BRED") |>
+  mutate(month_bred = floor_date(date_event, "month")) |>
+  group_by(month_bred) |>
+  summarise(
+    n_total_bred = n(),
+    n_rebreeds = sum(R == "R", na.rm = TRUE),
+    rebreed_rate = n_rebreeds / n_total_bred,
+    .groups = "drop"
+  ) |>
+  arrange(month_bred)
+
+# Display as a table
+rebreed_summary |>
+  gt() |>
+  tab_header(
+    title = "Monthly Rebreeding (R) Rate",
+    subtitle = "Percentage of breeding events flagged as 'R' per month"
+  ) |>
+  cols_label(
+    month_bred = "Month",
+    n_total_bred = "Total Bred Events",
+    n_rebreeds = "Rebreeds (R)",
+    rebreed_rate = "Rebreed Rate"
+  ) |>
+  fmt_percent(columns = rebreed_rate, decimals = 1) |>
+  fmt_date(columns = month_bred, date_style = "yMMMM")
+
+```
 
 
 ```{r}
@@ -435,7 +468,7 @@ abortion_cohort_table |>
   scale_x_date(date_labels = "%b %Y", date_breaks = "2 months") +
   labs(
     title = "Abortion Rate by Breeding Cohort",
-    subtitle = "Percentage of pregnant cohorts (P+A) that resulted in an abortion",
+    subtitle = "Percentage of bred events for Cows bred in the same month that resulted in an abortion",
     x = "Month Bred",
     y = "Abortion Rate"
   ) +
@@ -482,5 +515,185 @@ head(recheck_timeline)
 ```
 
 
+```{r}
+#| label: Preg by 100 DIM by Fresh Month Cohort
+#| echo: false
 
+cutoff_end <- floor_date(date_max_pull, "month") - months(3)
+cutoff_start <- cutoff_end - months(21)
+
+monthly_eligible <- animal_lactations |>
+  filter(date_fresh <= (date_max_pull - 100)) |>
+  mutate(calving_month = floor_date(date_fresh, "month")) |>
+  group_by(calving_month) |>
+  summarise(total_cows = n(), .groups = "drop")
+
+monthly_pregnant <- events_formatted |>
+  filter(event == "BRED", R %in% c("P", "A")) |>
+  select(-any_of("date_fresh")) |>
+  inner_join(
+    animal_lactations |> select(id_animal_lact, date_fresh), 
+    by = "id_animal_lact"
+  ) |>
+  mutate(
+    dim_at_event = as.numeric(date_event - date_fresh),
+    calving_month = floor_date(date_fresh, "month")
+  ) |>
+  filter(dim_at_event >= 0 & dim_at_event <= 100) |>
+  distinct(id_animal_lact, calving_month) |> 
+  group_by(calving_month) |>
+  summarise(pregnant_by_100 = n(), .groups = "drop")
+
+preg_by_100_summary <- monthly_eligible |>
+  left_join(monthly_pregnant, by = "calving_month") |>
+  mutate(
+    pregnant_by_100 = replace_na(pregnant_by_100, 0),
+    perc_preg_100 = pregnant_by_100 / total_cows
+  ) |>
+  filter(calving_month >= cutoff_start & calving_month < cutoff_end) |>
+  arrange(calving_month)
+```
+
+
+```{r}
+#| label: Preg by 150 DIM by Fresh Month Cohort
+#| echo: false
+
+cutoff_end <- floor_date(date_max_pull, "month") - months(5)
+cutoff_start <- cutoff_end - months(18)
+
+# Denominator: Adjusted to 150 days to give cows time to reach the window
+monthly_eligible_150 <- animal_lactations |>
+  filter(date_fresh <= (date_max_pull - 150)) |>
+  mutate(calving_month = floor_date(date_fresh, "month")) |>
+  group_by(calving_month) |>
+  summarise(total_cows = n(), .groups = "drop")
+
+# Numerator: Successful pregnancies (P or A) within 150 DIM
+monthly_pregnant_150 <- events_formatted |>
+  filter(event == "BRED", R %in% c("P", "A")) |>
+  select(-any_of("date_fresh")) |>
+  inner_join(
+    animal_lactations |> select(id_animal_lact, date_fresh), 
+    by = "id_animal_lact"
+  ) |>
+  mutate(
+    dim_at_event = as.numeric(date_event - date_fresh),
+    calving_month = floor_date(date_fresh, "month")
+  ) |>
+  filter(dim_at_event >= 0 & dim_at_event <= 150) |>
+  distinct(id_animal_lact, calving_month) |> 
+  group_by(calving_month) |>
+  summarise(pregnant_by_150 = n(), .groups = "drop")
+
+preg_by_150_summary <- monthly_eligible_150 |>
+  left_join(monthly_pregnant_150, by = "calving_month") |>
+  mutate(
+    pregnant_by_150 = replace_na(pregnant_by_150, 0),
+    perc_preg_150 = pregnant_by_150 / total_cows
+  ) |>
+  filter(calving_month >= cutoff_start & calving_month < cutoff_end) |>
+  arrange(calving_month)
+```
+
+```{r}
+#| label: Preg by 200 DIM by Fresh Month Cohort
+#| echo: false
+
+cutoff_end <- floor_date(date_max_pull, "month") - months(7)
+cutoff_start <- cutoff_end - months(18)
+
+# Denominator: Adjusted to 200 days to give cows time to reach the window
+monthly_eligible_200 <- animal_lactations |>
+  filter(date_fresh <= (date_max_pull - 200)) |>
+  mutate(calving_month = floor_date(date_fresh, "month")) |>
+  group_by(calving_month) |>
+  summarise(total_cows = n(), .groups = "drop")
+
+# Numerator: Successful pregnancies (P or A) within 200 DIM
+monthly_pregnant_200 <- events_formatted |>
+  filter(event == "BRED", R %in% c("P", "A")) |>
+  select(-any_of("date_fresh")) |>
+  inner_join(
+    animal_lactations |> select(id_animal_lact, date_fresh), 
+    by = "id_animal_lact"
+  ) |>
+  mutate(
+    dim_at_event = as.numeric(date_event - date_fresh),
+    calving_month = floor_date(date_fresh, "month")
+  ) |>
+  filter(dim_at_event >= 0 & dim_at_event <= 200) |>
+  distinct(id_animal_lact, calving_month) |> 
+  group_by(calving_month) |>
+  summarise(pregnant_by_200 = n(), .groups = "drop")
+
+preg_by_200_summary <- monthly_eligible_200 |>
+  left_join(monthly_pregnant_200, by = "calving_month") |>
+  mutate(
+    pregnant_by_200 = replace_na(pregnant_by_200, 0),
+    perc_preg_200 = pregnant_by_200 / total_cows
+  ) |>
+  filter(calving_month >= cutoff_start & calving_month < cutoff_end) |>
+  arrange(calving_month)
+```
+
+
+```{r}
+#| label: Combine and Plot All DIM Milestones
+#| echo: false
+
+# 1. Combine the summaries into a single long-format data frame
+combined_preg_summary <- bind_rows(
+  preg_by_100_summary |> 
+    rename(pregnant_count = pregnant_by_100, perc_preg = perc_preg_100) |> 
+    mutate(milestone = "100 DIM"),
+  preg_by_150_summary |> 
+    rename(pregnant_count = pregnant_by_150, perc_preg = perc_preg_150) |> 
+    mutate(milestone = "150 DIM"),
+  preg_by_200_summary |> 
+    rename(pregnant_count = pregnant_by_200, perc_preg = perc_preg_200) |> 
+    mutate(milestone = "200 DIM")
+) |> 
+  mutate(milestone = factor(milestone, levels = c("100 DIM", "150 DIM", "200 DIM")))
+
+# 2. Plot all three milestones together with respective benchmarks
+combined_preg_summary |>
+  ggplot(aes(x = calving_month, y = perc_preg, color = milestone, group = milestone)) +
+  # Benchmark Reference Lines
+  geom_hline(yintercept = 0.50, linetype = "dashed", color = "steelblue", linewidth = 0.6, alpha = 0.7) +
+  geom_hline(yintercept = 0.75, linetype = "dashed", color = "darkgreen", linewidth = 0.6, alpha = 0.7) +
+  geom_hline(yintercept = 0.90, linetype = "dashed", color = "purple4", linewidth = 0.6, alpha = 0.7) +
+  # Trend lines and points
+  geom_line(linewidth = 1.1) +
+  geom_point(size = 2) +
+  # Color palette matching each line
+  scale_color_manual(values = c("100 DIM" = "steelblue", "150 DIM" = "darkgreen", "200 DIM" = "purple4")) +
+  # Formatting scales
+  scale_y_continuous(
+    labels = scales::percent, 
+    limits = c(0, 1), 
+    breaks = seq(0, 1, by = 0.10)
+  ) +
+  scale_x_date(
+    date_labels = "%b %Y", 
+    date_breaks = "3 months"
+  ) +
+  # Labels
+  labs(
+    title = "Reproductive Efficiency Milestones by Calving Cohort",
+    subtitle = "Comparing Pregnancy Rates at 100, 150, and 200 Days in Milk against Targets",
+    x = "Month of Fresh/Calving",
+    y = "Pregnancy Rate",
+    color = "DIM Milestone",
+    caption = "Note: Dashed horizontal lines represent target benchmarks (50% for 100 DIM, 75% for 150 DIM, 90% for 200 DIM)."
+  ) +
+  # Professional theme
+  theme_minimal(base_size = 11) +
+  theme(
+    plot.title = element_text(face = "bold", size = 14),
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    panel.grid.minor = element_blank(),
+    legend.position = "bottom"
+  )
+```
 
