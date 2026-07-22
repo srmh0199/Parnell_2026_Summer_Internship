@@ -39,6 +39,13 @@ Run everything from the repo root (paths are relative or `here::here()`).
    directly (it does **not** require step 3 denominators) and produces
    `parnell_repro.html`. Render with `quarto render parnell_repro.qmd`; the farm
    name comes from the `event` param (default `"Monte Vista"`).
+6. **`ParnellRepro/app.R`** — an interactive Shiny version of `parnell_repro.qmd`.
+   Reads the same three parquet files (via `here::here()`, so it resolves the project
+   root even from the subfolder) and reproduces the report's KPIs as tabs, with
+   controls for the voluntary waiting period, number of 21-day periods, plotted
+   lactation groups, and how many recent periods to drop from the trend graphs. Run
+   with `shiny::runApp("ParnellRepro")` from the project root. Unlike the report it
+   does **not** source the GitHub "os" functions, so it runs offline.
 
 `functions/` holds `fxn_*.R` helpers; most come from the shared template.
 Sarah-authored ones are `fxn_denos_sarah.R` (yearly herd denominators) and
@@ -89,10 +96,12 @@ what the producer expects before publishing numbers.
 - **Pregnancy-rate graph still looks off** (noted in commit `c364545`) — the DIM
   milestone work is "done (maybe?)". Not yet validated against DC305's own repro
   summary, which is the obvious next check.
-- **`ParnellRepro/app.R` does not run.** The server references `df_herd`,
-  `lactation_group`, `pregnancy_status`, and `days_in_milk`, none of which are
-  defined or present in the parquet files. It is a scaffold for the cross-herd
-  comparison app, not a working app.
+- **`ParnellRepro/app.R` is a working Shiny app** (rebuilt 2026-07-22 from the old
+  broken scaffold, which referenced undefined variables `df_herd` / `lactation_group`
+  / `pregnancy_status` / `days_in_milk`). It ports `parnell_repro.qmd`'s calculations
+  verbatim and was verified end to end with `shiny::testServer` and a live browser
+  render. The anonymized *cross-herd* comparison app — the original intent of this
+  folder — is still unstarted; this is the single-herd report as an app.
 - **`monthly_report.qmd` does not render.** Line 92 calls `date_min_pull()` as a
   function when it's a Date, and the logo path (`milestones_dairy/images/ac logo.jpeg`)
   doesn't exist in this repo.
