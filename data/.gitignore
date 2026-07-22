@@ -1,1 +1,12 @@
 event_files07c68c6f-4439-4aed-af7a-38d067afb54c_202509150426_myce999.csv
+
+# Client herd data must NOT be committed. These are raw exports and the files
+# generated from them (regenerate locally by running step0_master_processing_my_data.R).
+event_files/*.csv
+intermediate_files/*.parquet
+qc_files/*.parquet
+template_files/template_event_details.*
+
+# ...but keep the empty-directory placeholders and the non-sensitive templates
+!.placeholder
+!*/.placeholder
