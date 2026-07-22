@@ -1,4 +1,3 @@
-
 ---
 title: "Parnell Reproductive Report"
 subtitle: "Reproductive Performance Summary"
@@ -24,7 +23,7 @@ params:
     value: "Monte Vista"
     input: text
 ---
-      
+
 ```{r}
 #| label: setup
 #| include: false
@@ -83,8 +82,6 @@ farm_name <- str_replace_all(farm_name, "[_|-]", " ") |> str_to_title()
 
 ```
 
-
-
 ```{r}
 #| label: Eligibility
 #| echo: false
@@ -137,8 +134,6 @@ eligible_cows_by_period <- periods_df |>
 
 
 ```
-
-
 
 ```{r}
 #| label: Insemination Rate
@@ -217,7 +212,6 @@ rebreed_summary |>
 
 ```
 
-
 ```{r}
 #| label: Conception Rate
 #| echo: false
@@ -276,7 +270,6 @@ cr_final |>
 
 ```
 
-
 ```{r}
 #| label: CR Graph
 #| echo: false
@@ -312,9 +305,6 @@ cr_summary_grouped |>
   ) +
   theme_minimal()
 ```
-
-
-
 
 ```{r}
 #| label: Pregnancy Rate
@@ -411,8 +401,6 @@ pr_summary |>
 
 ```
 
-
-
 ```{r}
 #| label: Abortions
 #| echo: false
@@ -455,7 +443,6 @@ abortion_cohort_table |>
 
 ```
 
-
 ```{r}
 #| label: Abortion Graph
 #| echo: false
@@ -475,8 +462,6 @@ abortion_cohort_table |>
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 ```
-
-
 
 ```{r}
 #| label: R Mystery
@@ -513,7 +498,6 @@ recheck_timeline <- prior_bred |>
 head(recheck_timeline)
 
 ```
-
 
 ```{r}
 #| label: Preg by 100 DIM by Fresh Month Cohort
@@ -553,7 +537,6 @@ preg_by_100_summary <- monthly_eligible |>
   filter(calving_month >= cutoff_start & calving_month < cutoff_end) |>
   arrange(calving_month)
 ```
-
 
 ```{r}
 #| label: Preg by 150 DIM by Fresh Month Cohort
@@ -637,7 +620,6 @@ preg_by_200_summary <- monthly_eligible_200 |>
   arrange(calving_month)
 ```
 
-
 ```{r}
 #| label: Combine and Plot All DIM Milestones
 #| echo: false
@@ -696,4 +678,3 @@ combined_preg_summary |>
     legend.position = "bottom"
   )
 ```
-
