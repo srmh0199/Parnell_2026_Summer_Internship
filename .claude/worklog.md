@@ -83,26 +83,36 @@ remote github.com/srmh0199/Parnell_2026_Summer_Internship).
 
 Context: read CLAUDE.md and .claude/worklog.md in that repo first. In short: an
 R/Quarto pipeline turns a DC305 event export (data/event_files/Monte Vista Dairy.csv)
-into parquet intermediate files, and parnell_repro.qmd renders the reproductive KPI
-report (insemination rate, CR, PR, abortion cohorts, % pregnant by 100/150/200 DIM).
-The pipeline runs end to end; the pregnancy-rate output is suspected wrong.
+into parquet intermediate files. parnell_repro.qmd renders a single-herd reproductive
+KPI report, and ParnellRepro/app.R is now a working Shiny version of that report
+(insemination rate, CR, PR, abortion cohorts, % pregnant by 100/150/200 DIM), verified
+end to end. The single-herd side works.
 
-Task for this session: validate the pregnancy-rate calculation in parnell_repro.qmd.
-Compare the per-period PR numbers against DC305's own repro summary for the same
-herd and date range, and against the conception-rate and insemination-rate tables in
-the same report (PR should roughly track IR x CR). Find where the definitions diverge
-— likely candidates are the eligibility filter (vwp = 50, the DNB/open/bred logic in
-the `Eligibility` chunk) and the fact that `distinct(period_id, id_animal_lact)` in
-the `Pregnancy Rate` chunk can keep the wrong row when a cow has several conceptions.
+Task for this session: build the anonymized CROSS-HERD comparison app — the original
+intent of the ParnellRepro folder. Goal: compare CR / PR / abortion rate across
+multiple herds without revealing which herd is which. Start by deciding the multi-herd
+data shape: today there is exactly one herd (Monte Vista) and the pipeline keys
+everything off location_event, so the first real question is how a second herd's data
+enters (another CSV in data/event_files? a herd-id column?). Factor the per-herd KPI
+calculations out of ParnellRepro/app.R (they are currently written for one herd) into a
+function that takes a herd's parquet and returns the period-level CR/PR/abortion
+summaries, then drive a comparison UI (anonymized herd labels, one line per herd) off
+that. Get the data-shape decision from Nora/Sarah before building — it drives everything.
 
 Constraints / things to know:
-- Render with `quarto render parnell_repro.qmd` from the repo root; it reads the
-  parquet files in data/intermediate_files directly and does not need step 3.
-- To rebuild the parquet files, run step0_master_processing_my_data.R from the repo
-  root. Do NOT set clean_slate <- TRUE; it deletes data/event_files.
-- Rendering needs internet: fxn_load_os_fxns() sources functions from GitHub.
-- A `BRED` event with R code P or A means the cow conceived; A is an abortion of a
-  real conception, so it belongs in both the CR numerator and the abortion numerator.
-- The most recent 2 periods are intentionally excluded from the trend graphs
-  (pregnancy diagnosis lag) — that is not the bug.
+- Run the app with `shiny::runApp("ParnellRepro")` from the repo root. It reads the
+  three parquet in data/intermediate_files via here::here(); do not make paths relative
+  to the app folder.
+- To (re)build the parquet, run step0_master_processing_my_data.R from the repo root.
+  Do NOT set clean_slate <- TRUE; it deletes data/event_files. The parquet are
+  gitignored, so a fresh clone must run this before the app will start.
+- Keep KPI definitions identical to parnell_repro.qmd so numbers stay comparable: a
+  BRED event with R code P or A is a conception (A is an abortion of a real conception);
+  eligibility uses vwp = 50; the most recent ~2 periods are dropped from trend graphs
+  because of pregnancy-diagnosis lag (not a bug).
+- The app deliberately does NOT source fxn_load_os_fxns() (GitHub) — keep it offline.
+- Still open and unvalidated: the pregnancy-rate numbers have never been checked against
+  DC305's own repro summary. Worth confirming before publishing cross-herd comparisons.
+- Client herd data must never be committed (see data/.gitignore); the repo is hosted at
+  srmh0199 and the raw CSV was purged from history on 2026-07-22.
 ```
