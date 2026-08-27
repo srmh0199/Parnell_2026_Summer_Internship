@@ -2,3 +2,9 @@
 .Rhistory
 .RData
 .Ruserdata
+
+# Quarto render artifacts written to the repo root when the step3 qmds are
+# rendered in place. The canonical renders belong in reports/, so ignore the
+# root-level copies (anchored with a leading / so reports/step3_*.html stays tracked).
+/step3_*.html
+/step3_*_files/
