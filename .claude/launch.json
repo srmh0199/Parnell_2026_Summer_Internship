@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "parnell-benchmark",
+      "runtimeExecutable": "C:\\Program Files\\R\\R-4.5.1\\bin\\Rscript.exe",
+      "runtimeArgs": ["run_parnell_benchmark.R"],
+      "port": 7789
+    }
+  ]
+}

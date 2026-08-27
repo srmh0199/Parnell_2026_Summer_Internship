@@ -186,9 +186,7 @@ ui <- page_sidebar(
       layout_columns(
         fill = FALSE,
         value_box("Farm", textOutput("vb_farm", inline = TRUE)),
-        value_box("Data range", textOutput("vb_range", inline = TRUE)),
-        value_box("Animals", textOutput("vb_animals", inline = TRUE)),
-        value_box("Breeding events", textOutput("vb_bred", inline = TRUE))
+        value_box("Data range", textOutput("vb_range", inline = TRUE))
       ),
       card(
         card_header("About this dashboard"),
@@ -213,38 +211,43 @@ ui <- page_sidebar(
 
     nav_panel(
       "Conception Rate",
-      card(card_header("Conception Rate by Lactation Group"), gt_output("cr_table")),
-      layout_columns(
-        card(card_header("Conception rate trend"), plotOutput("cr_trend")),
-        card(card_header("Conception rate distribution"), plotOutput("cr_density"))
+      navset_tab(
+        nav_panel("Table", card(card_header("Conception Rate by Lactation Group"), gt_output("cr_table"))),
+        nav_panel("Trend", card(card_header("Conception rate trend"), plotOutput("cr_trend"))),
+        nav_panel("Distribution", card(card_header("Conception rate distribution"), plotOutput("cr_density")))
       )
     ),
 
     nav_panel(
       "Pregnancy Rate",
-      card(card_header("Pregnancy Rate by Lactation Group"), gt_output("pr_table")),
-      layout_columns(
-        card(card_header("Pregnancy rate trend"), plotOutput("pr_trend")),
-        card(card_header("Pregnancy rate distribution"), plotOutput("pr_density"))
+      navset_tab(
+        nav_panel("Table", card(card_header("Pregnancy Rate by Lactation Group"), gt_output("pr_table"))),
+        nav_panel("Trend", card(card_header("Pregnancy rate trend"), plotOutput("pr_trend"))),
+        nav_panel("Distribution", card(card_header("Pregnancy rate distribution"), plotOutput("pr_density")))
       )
     ),
 
     nav_panel(
       "Rebreeds & Abortions",
-      layout_columns(
-        card(card_header("Monthly Rebreeding (R) Rate"), gt_output("rebreed_table")),
-        card(card_header("Monthly Abortion Cohort"), gt_output("abortion_table"))
-      ),
-      card(card_header("Abortion rate by breeding cohort"), plotOutput("abortion_plot"))
+      navset_tab(
+        nav_panel("Rebreed Table", card(card_header("Monthly Rebreeding (R) Rate"), gt_output("rebreed_table"))),
+        nav_panel("Abortion Table", card(card_header("Monthly Abortion Cohort"), gt_output("abortion_table"))),
+        nav_panel("Abortion Trend", card(card_header("Abortion rate by breeding cohort"), plotOutput("abortion_plot")))
+      )
     ),
 
     nav_panel(
       "DIM Milestones",
-      card(
-        card_header("Pregnancy rate at 100 / 150 / 200 DIM by calving cohort"),
-        plotOutput("dim_plot", height = "480px")
-      ),
-      card(card_header("Underlying data"), gt_output("dim_table"))
+      navset_tab(
+        nav_panel(
+          "Trend",
+          card(
+            card_header("Pregnancy rate at 100 / 150 / 200 DIM by calving cohort"),
+            plotOutput("dim_plot", height = "480px")
+          )
+        ),
+        nav_panel("Table", card(card_header("Underlying data"), gt_output("dim_table")))
+      )
     )
   )
 )
@@ -550,10 +553,8 @@ server <- function(input, output, session) {
   })
 
   # -- Overview value boxes ----------------------------------------------
-  output$vb_farm    <- renderText(farm_name())
-  output$vb_range   <- renderText(paste(format(date_min_pull, "%b %Y"), "–", format(date_max_pull, "%b %Y")))
-  output$vb_animals <- renderText(scales::comma(n_distinct(events_formatted$id_animal)))
-  output$vb_bred    <- renderText(scales::comma(sum(events_formatted$event == "BRED", na.rm = TRUE)))
+  output$vb_farm  <- renderText(farm_name())
+  output$vb_range <- renderText(paste(format(date_min_pull, "%b %Y"), "–", format(date_max_pull, "%b %Y")))
 }
 
 shinyApp(ui, server)

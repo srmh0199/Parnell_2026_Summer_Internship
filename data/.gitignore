@@ -10,3 +10,13 @@ template_files/template_event_details.*
 # ...but keep the empty-directory placeholders and the non-sensitive templates
 !.placeholder
 !*/.placeholder
+
+# 451-herd cross-herd extract used for ParnellBenchmark. The raw per-herd
+# files carry real farm name/address/city/state (see build_parnell_benchmark.R),
+# same reasoning as event_files/intermediate_files above — never commit them,
+# and never commit the zipped bundle they were unpacked from.
+parnell_files/silver/
+silver.zip
+# benchmark_monthly.rds is the anonymized, derived summary build_parnell_benchmark.R
+# writes out of that data (no herd name/address/HerdKey — see its anonymity
+# assertions) and is fine to commit like any other derived data/ file.
