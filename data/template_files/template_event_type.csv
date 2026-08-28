@@ -1,105 +1,197 @@
 Event,Protocols,event_type,count_rows
-ABCESS,NA,unknown,244
-ABORT,NA,repro,1179
-APOYO,BANAMINE.IV,unknown,5
-APOYO,Bovicalc.PO,unknown,127
-APOYO,YMCP.PO,unknown,412
-APOYO,NA,unknown,1
-BLOODY,NA,health,467
-BORN,NA,phase_parameter,17694
-BRED,NA,repro,25953
-BULLPEN,NA,repro,1
-CALFVAC,NA,vac,3964
-CALVINJ,PENG BAN,unknown,30
-CALVINJ,NA,unknown,2
-CHECK,NA,repro,1795
-COMMENT,NA,unknown,850
-CULL,NA,management,1
-CULTURE,Clinical,health,991
-CULTURE,S.AUREUS,health,150
-CULTURE,NA,health,137
-DA,DA No treat,health,2
-DA,PEN G/GLYCOL,health,4
-DA,POLYFLEX.IM,health,24
-DAIRY,NA,unknown,9
-DELAY,NA,unknown,3
-DIARHEA,ALBON ORALl,health,4
-DIARHEA,BloodyGut,health,1
-DIARHEA,NO DRUGS,health,1813
-DIARHEA,NA,health,2
-DIED,NA,lact_parameter,854
-DNB,NA,repro,2558
-DOWN,DOWN,health,212
-DOWN,NA,health,28
-DRY,DRYLCOX.IMM,lact_parameter,1
-DRY,Dry Soma NT,lact_parameter,42
-DRY,ORBEN_DRY.IMM,lact_parameter,9
-DRY,SPECTROMASTDC,lact_parameter,5724
-FAT,NA,unknown,495
-FOOTROT,ALBON ORAL,health,2
-FOOTROT,EXCEDE,health,147
-FOOTROT,PEN.ALB,health,3
-FOOTROT,NA,health,6
-FRSTBIT,FROST,unknown,13
-GOHOME,NA,management,4472
-HEAT,NA,repro,111
-INJURY,No Treat,health,133
-INJURY,PENG3 BAN2,health,5
-INJURY,banamine,health,19
-INJURY,NA,health,11
-KETOSIS,GLYCOL,health,3
-LAME,Leg-AboveFoot,health,8
-LAME,Sole Ulcer,health,3
-LAME,ThinSoleOverw,health,1
-LAME,ToeNecrsAbsce,health,1
-LAME,NA,health,7
-LOWBAG,NA,unknown,300
-MAST,NO TREATMENT,health,1848
-MAST,SPECTRA-LC.IM,health,1176
-MAST,NA,health,22
-METR,EXCEDE-BOE,health,147
-METR,EXENEL.IM,health,27
-METR,PEN G,health,141
-METR,POLYFLEX.IM,health,696
-MF,CMPK,health,9
-MF,YMCP.PO,health,104
-MF,NA,health,27
-MOVE,NA,repro,43049
-OK,NA,repro,39843
-OPEN,NA,repro,5166
-PINKEYE,SPECTROMAST,health,58
-PINKEYE,NA,health,316
-PNEU,BIOMYCN4 BAN2,health,562
-PNEU,Draxxin KP,health,556
-PNEU,EXCENEL.Beef,health,235
-PNEU,NT BEEF,health,48
-PNEU,POLYFLEX.IM,health,470
-PNEU,draxxin,health,119
-PNEU,nuflor,health,2679
-PNEU,zuprevo,health,7
-PNEU,NA,health,994
-PREG,NA,repro,20969
-PREV,NA,repro,592
-RECK,NA,repro,604
-RESULT,BHB.Result,measure,1
-RP,EXENEL.IM,health,39
-RP,PEN G,health,171
-RP,POLYFLEX.IM,health,848
-SALE,NA,unknown,151
-SOLD,NA,lact_parameter,15832
-SYSMAST,Biomycin,health,48
-SYSMAST,EXENEL.SQ,health,461
-SYSMAST,SPECTRA-LC.IM,health,174
-TEAT3,NA,management,339
-TOAI,NA,unknown,2461
-TOCLOSE,NA,management,8877
-TOGROWR,NA,management,3361
-TRIM,NA,health,4890
-VACC,Pre-Breeding,vac,2733
-VACC,NA,vac,6456
-VACC3W,NA,vac,2352
-WART,WRAP,unknown,90
-WEIGHTS,peng_oil,unknown,480
-WEIGHTS,NA,unknown,6419
-WELL,NA,management,6286
-XID,NA,management,5
+ABORT,NA,repro,9285
+AIOK,NA,unknown,2307
+BANAMIN,BAN.IV,health,121
+BANAMIN,BANAMINE,health,7394
+BANAMIN,BANAMINE.IV,health,5301
+BANAMIN,NA,health,375
+BIRDFLU,Drench,health,5292
+BIRDFLU,PILLS,health,1032
+BIRDFLU,NA,health,300
+BLDYMLK,NA,health,1452
+BORN,NA,phase_parameter,39993
+BOTTLES,BOTTLES,unknown,20543
+BOTTLES,NA,unknown,41
+BRED,NA,repro,208324
+BULLPEN,NA,repro,3310
+CALFSCK,Baytril,unknown,84
+CALFSCK,Dextrose,unknown,11
+CALFVAC,NA,vac,4836
+CHECK,NA,repro,12790
+CLFRTRN,NA,unknown,2750
+CLOSE,NA,management,70495
+CMHLTH,Meloxicam,unknown,159
+CMHLTH,NA,unknown,313
+CULTURE,Furosemide.IM,health,4
+CULTURE,NA,health,49725
+CUTTEAT,NA,unknown,198
+CYST,NA,repro,1
+DA,NA,health,1
+DEHYDR,NA,health,248
+DIED,NA,lact_parameter,4667
+DNB,NA,repro,10271
+DOWN,BANAMINE,health,90
+DOWN,No Banamine,health,1564
+DRAXXIN,NA,unknown,5
+DRY,DRY NO TUBES,lact_parameter,16
+DRY,DRYCLOX.IM,lact_parameter,772
+DRY,DRYLCOX.IMM,lact_parameter,11849
+DRY,SPCTMAST DC,lact_parameter,8697
+DRY,SPECTRA-DC.IM,lact_parameter,26375
+DRY,NA,lact_parameter,3386
+DSTOCIA,DYST Excenel,unknown,4
+DSTOCIA,DYST POLYFLEX,unknown,11
+EARINFT,Infection-Draxx,unknown,313
+EARINFT,Infection-Excen,unknown,3
+EARINFT,Infection-Nuflo,unknown,51
+EXCEDE,BOLA,health,125
+EXCEDE,EXCEDE.IM,health,5
+EXCEDE,NA,health,3
+EXCENEL,EXCENEL.IM,unknown,43959
+EXCENEL,NA,unknown,9
+FAT,NA,unknown,10
+FERA,NA,unknown,1376
+FEVER,FEVER,health,33
+FEVER,Fever,health,10
+FEVER,Meloxicam,health,173
+FEVER,NA,health,21
+FPRVTRT,NA,unknown,157
+FR.FEVE,FRESH FEVER,unknown,1
+FRESH,71,lact_parameter,1
+FRESH,NA,lact_parameter,75861
+GNRH,NA,repro,43733
+GOHOME,NA,management,11325
+GROUP,NA,unknown,14
+HEAT,NA,repro,17157
+HOSP,PENICILLIN,management,18
+HOSP,NA,management,65
+INFUSE,INF.TERR,unknown,2
+INFUSE,INFUSE.CLORIN,unknown,1
+INFUSE,INFUSE.TETRAC,unknown,4572
+INFUSE,NA,unknown,1152
+KETONE,NA,unknown,72125
+KETOSIS,KETOSIS,health,17380
+KETOSIS,Ketosis,health,26
+LAME,DURAMYCIN,health,232
+LAME,EXCEDE,health,3
+LAME,Foot Rot,health,598
+LAME,Foot rot,health,198
+LAME,Hemorrhage,health,103
+LAME,LA 200,health,1231
+LAME,LA200.IM,health,272
+LAME,LAME BLOCK,health,16
+LAME,LAME TRIM,health,821
+LAME,LAME.COW,health,22
+LAME,LAME/WRAP,health,27
+LAME,Leg-AboveFoot,health,392
+LAME,Other,health,764
+LAME,PENICILLIN,health,358
+LAME,Sole Ulcer,health,4914
+LAME,Stiffle,health,1235
+LAME,Thin Sole,health,1991
+LAME,Toe Ulcer,health,89
+LAME,Toe ulcer,health,243
+LAME,Trim Only,health,155
+LAME,Wart,health,413
+LAME,Warts,health,28
+LAME,White Line,health,7436
+LAME,NA,health,2167
+LASIX,FUROSEMIDE,unknown,1130
+LBST,NA,unknown,5
+LUT,NA,repro,153798
+MAST,MAST,health,1609
+MAST,NA,health,17714
+MEASURE,NA,measure,1949
+METR,INF.CLORO,health,569
+METR,INF.TERR,health,10
+METR,Metri.Fever,health,959
+METR,Mild Metr 2d,health,356
+METR,Mild Metr 3d,health,3797
+METR,Milk Metr 2d,health,7
+METR,Sever Metr 3d,health,9
+METR,Sever Metr 5d,health,68
+METR,NA,health,18
+MFEVER,Milk Fever,health,993
+MFEVER,NA,health,290
+MOVE,NA,repro,221181
+MOVEAI,NA,repro,23047
+MPFLEXP,NA,unknown,4057
+NAVEL,Infection-Excen,health,1
+NAVEL,Infection-Penec,health,13
+NAXCEL,NAXCEL.IM,health,5404
+NUFLR,NUFLOR,unknown,128
+OK,NA,repro,21917
+OPEN,NA,repro,23334
+OUT,NA,unknown,14800
+P.EYE,PINK EYELA200,unknown,4900
+PILLS,BOVIKALC,unknown,7639
+PILLS,PILLS,unknown,15514
+PILLS,NA,unknown,8
+PINKEYE,NA,health,4
+PIRSUE,PIRSUE,health,237
+PIRSUE,NA,health,1118
+PNEU,Baytril`,health,17898
+PNEU,DRAXX.BANAMIN,health,7603
+PNEU,DRAXXIN,health,191
+PNEU,Draxin.IM,health,48
+PNEU,EXCEDE,health,31
+PNEU,EXCENEL-3 DAY,health,40
+PNEU,LA200,health,68
+PNEU,MICOTIL,health,1
+PNEU,NUFLOR,health,7806
+PNEU,NUFLOR.BANAMI,health,3909
+PNEU,POLYFLEX,health,78
+PNEU,Pneu.Fever,health,958
+PNEU,Pneumonia,health,1
+PNEU,Resflor,health,2
+PNEU,NA,health,2773
+POLYFLX,EYE-POLY,health,1
+POLYFLX,POLYFLEX.IM,health,37270
+POLYFLX,NA,health,143
+PREG,NA,repro,218744
+PREV,NA,repro,1658
+RECHK,NA,repro,913
+REMARK,NA,unknown,20504
+RETAINP,Bio 200,health,32
+RETAINP,Bolus,health,576
+RETAINP,RP EXCENEL,health,2
+RETAINP,RP INFUSE TET,health,2249
+RETAINP,RP POLYFLEX,health,31
+RETAINP,TERRA PILLS,health,10
+RETAINP,NA,health,4
+SCOURS,ELECTROLYTES,health,53
+SCOURS,Excenel,health,1
+SCOURS,Nax+Ban,health,2673
+SCOURS,Naxcel,health,14402
+SCOURS,SMT,health,99
+SCOURS,SpectoBis,health,165
+SCOURS,NA,health,2286
+SICK,NA,health,11468
+SKINNY,NA,unknown,3
+SOLD,NA,lact_parameter,29589
+SPCTMST,SPCTMST LC,health,8096
+SPCTMST,NA,health,2
+SPT.PLX,SPCT/PLFX.IM,unknown,85
+SPT4DAY,SPCT/4DAYS.IM,unknown,1530
+SPTRMST,PLFX\IM,unknown,412
+SPTRMST,SPECTRAMAST,unknown,11112
+SPTRMST,TUDAY.TU,unknown,885
+SPTRMST,NA,unknown,32
+SRP,NA,vac,27572
+STOMACH,BLOOD,unknown,114
+STOMACH,BOTTLES,unknown,37
+STOMACH,Blood,unknown,163
+STOMACH,DIARRHEA,unknown,697
+STOMACH,DRENCH-MINOIL,unknown,7
+STOMACH,Diarrhea,unknown,717
+STOMACH,SALMONELLA,unknown,1
+STOMACH,Salmonella,unknown,95
+STOMACH,UNDIGESTED,unknown,460
+STOMACH,Undigested,unknown,2722
+STOMACH,NA,unknown,18
+TEAT3,NA,management,1693
+TODAYTB,Today,unknown,205
+TOGROWR,NA,management,30062
+TREATED,NA,health,1014
+WEIGHT,NA,measure,28602
+XID,NA,management,17411

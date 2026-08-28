@@ -46,8 +46,8 @@ source("functions/fxn_treatment.R")
 ## If you choose to use custom functions you must source them when you assign them
 
 ### animal id  (turn on only one of these lines) ---------
- fxn_assign_id_animal <- fxn_assign_id_animal_default
-#fxn_assign_id_animal <- fxn_assign_id_animal_parnell
+#fxn_assign_id_animal <- fxn_assign_id_animal_default
+fxn_assign_id_animal <- fxn_assign_id_animal_parnell
 
 ### denominator granularity-----------------------
 #Create a list of time periods (number of days) by which denominators will be created.  
