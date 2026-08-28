@@ -68,6 +68,16 @@ if (length(missing) > 0) {
 events_formatted  <- read_parquet(file.path(data_dir, "events_formatted.parquet"))
 animal_lactations <- read_parquet(file.path(data_dir, "animal_lactations.parquet"))
 
+# The intermediate files can hold SEVERAL herds at once: Parnell-style pulls
+# processed with fxn_assign_id_animal_parnell prefix every id_animal with the
+# herd GUID, so that prefix splits the data back into herds here. Data built
+# with the default id function (e.g. Monte Vista's single CSV) has no GUID
+# prefix and falls back to one herd labeled "My Herd".
+own_herd_label <- function(id) {
+  key <- str_extract(id, "^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4,12}")
+  if_else(is.na(key), "My Herd", paste("Herd", str_sub(key, 1, 8)))
+}
+
 # events_formatted already carries its own lact_group ("Heifer"/"LACT 1"/
 # "LACT 2"/"LACT 3+"), so Conception Rate needs no join to animal_lactations.
 own_lact_map <- c("LACT 1" = "Lact 1", "LACT 2" = "Lact 2", "LACT 3+" = "Lact 3+")
@@ -75,15 +85,15 @@ own_lact_map <- c("LACT 1" = "Lact 1", "LACT 2" = "Lact 2", "LACT 3+" = "Lact 3+
 own_cr_monthly <- events_formatted %>%
   filter(event == "BRED", lact_group %in% names(own_lact_map)) %>%
   mutate(
+    herd_label = own_herd_label(id_animal),
     lact_group = unname(own_lact_map[lact_group]),
     month      = floor_date(date_event, "month")
   ) %>%
   fxn_standardize_for_CR() %>%
-  group_by(month, lact_group, Rstandard) %>%
+  group_by(herd_label, month, lact_group, Rstandard) %>%
   fxn_calculate_CR_main() %>%
   ungroup() %>%
-  select(month, lact_group, std_Open, std_Pregnant, std_Abort, std_Other, deno, preg, other, total) %>%
-  mutate(herd_label = "Monte Vista")
+  select(herd_label, month, lact_group, std_Open, std_Pregnant, std_Abort, std_Other, deno, preg, other, total)
 
 # IR / PR / Rebreed / Abortion / DIM milestones need date_fresh/date_dry/
 # date_archive, which only live in animal_lactations, reshaped to the same
@@ -92,6 +102,7 @@ own_cr_monthly <- events_formatted %>%
 own_lact_data <- animal_lactations %>%
   filter(lact_number > 0) %>%
   transmute(
+    herd_label = own_herd_label(id_animal),
     cowid_lact = id_animal_lact,
     lact_group = case_when(
       lact_number == 1 ~ "Lact 1", lact_number == 2 ~ "Lact 2",
@@ -103,39 +114,102 @@ own_lact_data <- animal_lactations %>%
 
 own_bred_events <- events_formatted %>%
   filter(event == "BRED") %>%
-  transmute(cowid_lact = id_animal_lact, date_event, R)
+  transmute(herd_label = own_herd_label(id_animal), cowid_lact = id_animal_lact, date_event, R)
 
-own_months_vec <- seq(
-  floor_date(min(own_bred_events$date_event, na.rm = TRUE), "month"),
-  floor_date(max(own_bred_events$date_event, na.rm = TRUE), "month"),
-  by = "month"
-)
+own_herds <- sort(unique(own_bred_events$herd_label))
 
-own_ir_pr_monthly <- fxn_monthly_ir_pr(own_lact_data, own_bred_events, own_months_vec, VWP) %>%
-  mutate(herd_label = "Monte Vista")
+# Month range and date_max_pull are per herd — pulls can be days or weeks
+# apart, and sharing a calendar range would fabricate empty months.
+own_ir_pr_monthly <- map_dfr(own_herds, function(h) {
+  bred_h <- own_bred_events %>% filter(herd_label == h)
+  lact_h <- own_lact_data %>% filter(herd_label == h)
+  months_h <- seq(
+    floor_date(min(bred_h$date_event, na.rm = TRUE), "month"),
+    floor_date(max(bred_h$date_event, na.rm = TRUE), "month"),
+    by = "month"
+  )
+  fxn_monthly_ir_pr(lact_h, bred_h, months_h, VWP) %>% mutate(herd_label = h)
+})
 
 own_rebreed_monthly <- own_bred_events %>%
   filter(!is.na(date_event)) %>%
   mutate(month = floor_date(date_event, "month")) %>%
-  group_by(month) %>%
-  summarise(n_total_bred = n(), n_rebreeds = sum(R == "R", na.rm = TRUE), .groups = "drop") %>%
-  mutate(herd_label = "Monte Vista")
+  group_by(herd_label, month) %>%
+  summarise(n_total_bred = n(), n_rebreeds = sum(R == "R", na.rm = TRUE), .groups = "drop")
 
 own_abortion_monthly <- own_bred_events %>%
   fxn_standardize_for_CR() %>%
   filter(Rstandard %in% c("std_Pregnant", "std_Abort")) %>%
   mutate(month = floor_date(date_event, "month")) %>%
-  group_by(month) %>%
-  summarise(total_pregnancies = n(), n_abortions = sum(Rstandard == "std_Abort"), .groups = "drop") %>%
-  mutate(herd_label = "Monte Vista")
+  group_by(herd_label, month) %>%
+  summarise(total_pregnancies = n(), n_abortions = sum(Rstandard == "std_Abort"), .groups = "drop")
 
 own_date_max_pull <- max(own_bred_events$date_event, na.rm = TRUE)
-own_dim_milestone <- bind_rows(
-  fxn_dim_milestone(own_lact_data, own_bred_events, 100, own_date_max_pull),
-  fxn_dim_milestone(own_lact_data, own_bred_events, 150, own_date_max_pull),
-  fxn_dim_milestone(own_lact_data, own_bred_events, 200, own_date_max_pull)
-) %>%
-  mutate(herd_label = "Monte Vista")
+own_dim_milestone <- map_dfr(own_herds, function(h) {
+  bred_h <- own_bred_events %>% filter(herd_label == h)
+  lact_h <- own_lact_data %>% filter(herd_label == h)
+  dmp_h  <- max(bred_h$date_event, na.rm = TRUE)
+  bind_rows(
+    fxn_dim_milestone(lact_h, bred_h, 100, dmp_h),
+    fxn_dim_milestone(lact_h, bred_h, 150, dmp_h),
+    fxn_dim_milestone(lact_h, bred_h, 200, dmp_h)
+  ) %>% mutate(herd_label = h)
+})
+
+# One stable color per own herd (solid lines); the peer population is always
+# grey + dashed so your herds carry the color.
+own_line_colors <- setNames(
+  rep_len(c("#0B4568", "#C05717", "#5B2C6F", "#1D6E3F", "#8B1E3F", "#B8860B"), length(own_herds)),
+  own_herds
+)
+line_color_scale <- scale_color_manual(
+  values = c(own_line_colors, "Peer population (pooled)" = "grey45")
+)
+line_linetype_scale <- scale_linetype_manual(
+  values = c(setNames(rep("solid", length(own_herds)), own_herds), "Peer population (pooled)" = "dashed")
+)
+line_fill_scale <- scale_fill_manual(
+  values = c(own_line_colors, "Peer population (pooled)" = "grey45"), guide = "none"
+)
+
+# Flags each line's noisy edge months so the loess trend ignores them (they
+# still draw as hollow points — nothing is silently hidden):
+#   - the line's most recent trim_recent months, where outcome-dependent
+#     rates read falsely low because pregnancy diagnoses lag breedings;
+#   - months whose denominator is below min_frac of that line's median
+#     (ramp-in at the start of an export, or a thin partial month).
+# Grouping columns beyond herd_label (lact_group, milestone) come in via ...;
+# time_col is the plot's x (month, or calving_month for DIM).
+flag_edge_months <- function(df, trim_recent, min_frac, ..., time_col = month) {
+  df %>%
+    group_by(herd_label, ...) %>%
+    mutate(
+      keep = {{ time_col }} <= max({{ time_col }}) %m-% months(trim_recent) &
+             n >= min_frac * median(n),
+      keep = tidyr::replace_na(keep, FALSE)
+    ) %>%
+    ungroup()
+}
+
+# Drops each herd's most recent trim_recent months entirely — used for the
+# "Where It Sits" ranking window so the outcome-lag months don't drag every
+# herd's recent rate down (window_recent then anchors on the trimmed max).
+drop_recent_months <- function(df, trim_recent, time_col = month) {
+  df %>%
+    group_by(herd_label) %>%
+    filter({{ time_col }} <= max({{ time_col }}) %m-% months(trim_recent)) %>%
+    ungroup()
+}
+
+# Limits each displayed line to the n_years ending at its most recent KEPT
+# month (its last month with a real reported result). Trailing hollow months
+# after that anchor still show; a line with no kept months at all drops out.
+window_display <- function(df, ..., n_years = 3, time_col = month) {
+  df %>%
+    group_by(herd_label, ...) %>%
+    filter(any(keep), {{ time_col }} >= max({{ time_col }}[keep]) %m-% lubridate::years(n_years)) %>%
+    ungroup()
+}
 
 # =========================================================================
 # Shared calculation helpers
@@ -162,21 +236,27 @@ five_band <- function(x, breaks) {
 # Bundles the four reactives a lact_group-faceted rate view needs (trend,
 # ranking, distribution) so Insemination/Conception/Pregnancy Rate don't
 # each repeat the same reactive logic under a different measure name.
-make_rate_views <- function(peer_df, own_df, k_col, n_col, active_groups, n_months, min_deno) {
+make_rate_views <- function(peer_df, own_df, k_col, n_col, active_groups, n_months, min_deno, selected_herds,
+                            trim_lag, min_frac) {
   trend_data <- reactive({
     peer_line <- peer_df %>%
       filter(lact_group %in% active_groups()) %>%
       fxn_pool_rate(k_col, n_col, month, lact_group) %>%
       mutate(herd_label = "Peer population (pooled)")
     own_line <- own_df %>%
-      filter(lact_group %in% active_groups()) %>%
-      fxn_pool_rate(k_col, n_col, month, lact_group) %>%
-      mutate(herd_label = "Monte Vista")
-    bind_rows(peer_line, own_line)
+      filter(herd_label %in% selected_herds(), lact_group %in% active_groups()) %>%
+      fxn_pool_rate(k_col, n_col, herd_label, month, lact_group)
+    bind_rows(peer_line, own_line) %>%
+      filter(n > 0) %>%
+      flag_edge_months(trim_recent = trim_lag(), min_frac = min_frac(), lact_group) %>%
+      window_display(lact_group)
   })
 
   peer_ranked <- reactive({
-    window_recent(peer_df %>% filter(lact_group %in% active_groups()), n_months()) %>%
+    window_recent(
+      peer_df %>% filter(lact_group %in% active_groups()) %>% drop_recent_months(trim_lag()),
+      n_months()
+    ) %>%
       fxn_pool_rate(k_col, n_col, herd_label, lact_group) %>%
       filter(n > 0)
   })
@@ -186,7 +266,11 @@ make_rate_views <- function(peer_df, own_df, k_col, n_col, active_groups, n_mont
   })
 
   own_pooled <- reactive({
-    window_recent(own_df %>% filter(lact_group %in% active_groups()), n_months()) %>%
+    window_recent(
+      own_df %>% filter(herd_label %in% selected_herds(), lact_group %in% active_groups()) %>%
+        drop_recent_months(trim_lag()),
+      n_months()
+    ) %>%
       fxn_pool_rate(k_col, n_col, herd_label, lact_group)
   })
 
@@ -218,7 +302,8 @@ make_rate_views <- function(peer_df, own_df, k_col, n_col, active_groups, n_mont
       ) %>%
       ungroup() %>%
       mutate(quality = fxn_cr_quality_label(n)) %>%
-      select(lact_group, n, rate, rate_lower, rate_upper, quality, peer_median, n_peers, percentile, band)
+      select(herd_label, lact_group, n, rate, rate_lower, rate_upper, quality, peer_median, n_peers, percentile, band) %>%
+      arrange(herd_label, lact_group)
   })
 
   list(trend_data = trend_data, peer_ranked = peer_ranked, peer_kept = peer_kept,
@@ -226,25 +311,31 @@ make_rate_views <- function(peer_df, own_df, k_col, n_col, active_groups, n_mont
 }
 
 # Registers the Trend / Where It Sits outputs for one rate view under
-# id_prefix (e.g. "ir_", "cr_", "pr_").
-attach_rate_outputs <- function(output, id_prefix, views, measure_label) {
+# id_prefix (e.g. "ir_", "cr_", "pr_"). loess_span / show_points / show_se
+# are reactives: the shared "Trend sensitivity" slider and the two checkboxes.
+attach_rate_outputs <- function(output, id_prefix, views, measure_label, loess_span, show_points, show_se) {
   output[[paste0(id_prefix, "trend_plot")]] <- renderPlot({
-    views$trend_data() %>%
-      filter(n > 0) %>%
-      ggplot(aes(month, rate, color = herd_label, linetype = herd_label)) +
+    dat <- views$trend_data()
+    ggplot(dat, aes(month, rate, color = herd_label, linetype = herd_label)) +
       geom_ribbon(
-        data = . %>% filter(herd_label == "Peer population (pooled)"),
-        aes(ymin = rate_lower, ymax = rate_upper), alpha = 0.15, color = NA, fill = "steelblue"
+        data = dat %>% filter(herd_label == "Peer population (pooled)", keep),
+        aes(ymin = rate_lower, ymax = rate_upper), alpha = 0.2, color = NA, fill = "grey60"
       ) +
-      geom_line(linewidth = 1) +
-      geom_point(size = 1.3) +
+      (if (show_points()) geom_point(aes(shape = keep), size = 1.1, alpha = 0.35)) +
+      geom_smooth(
+        data = dat %>% filter(keep),
+        aes(fill = herd_label, weight = n), method = "loess", span = loess_span(),
+        se = show_se(), alpha = 0.15, linewidth = 1
+      ) +
       facet_wrap(~lact_group) +
       scale_y_continuous(labels = percent, limits = c(0, 1)) +
-      scale_color_manual(values = c("Monte Vista" = "#0B4568", "Peer population (pooled)" = "steelblue")) +
-      scale_linetype_manual(values = c("Monte Vista" = "solid", "Peer population (pooled)" = "dashed")) +
+      scale_shape_manual(values = c(`TRUE` = 16, `FALSE` = 1), guide = "none") +
+      line_color_scale +
+      line_linetype_scale +
+      line_fill_scale +
       labs(
         title = paste(measure_label, "by month"),
-        subtitle = "Shaded band is the 95% interval around the pooled peer rate that month",
+        subtitle = "Denominator-weighted loess trends; hollow points are trimmed edge months; band is the 95% interval around the pooled peer rate",
         x = NULL, y = measure_label, color = NULL, linetype = NULL
       ) +
       theme_minimal(base_size = 12) +
@@ -263,11 +354,11 @@ attach_rate_outputs <- function(output, id_prefix, views, measure_label) {
     views$rank_summary() %>%
       gt() %>%
       tab_header(
-        title = sprintf("Monte Vista's %s vs. the peer population", measure_label),
-        subtitle = "Each herd's own most recent window, ranked on the lower confidence bound"
+        title = sprintf("Your herds' %s vs. the peer population", measure_label),
+        subtitle = "Each herd's own most recent window (trailing outcome-lag months excluded), ranked on the lower confidence bound"
       ) %>%
       cols_label(
-        lact_group = "Lactation Group", n = "n", rate = "Monte Vista",
+        herd_label = "Herd", lact_group = "Lactation Group", n = "n", rate = "Rate",
         rate_lower = "Lower Bound", rate_upper = "Upper Bound", quality = "Data Volume",
         peer_median = "Peer Median", n_peers = "Peers Ranked",
         percentile = "Percentile (on lower bound)", band = "Band"
@@ -280,16 +371,18 @@ attach_rate_outputs <- function(output, id_prefix, views, measure_label) {
     req(nrow(views$peer_kept()) > 0)
     own <- views$own_pooled()
     ggplot(views$peer_kept(), aes(rate)) +
-      geom_histogram(binwidth = 0.02, fill = "steelblue", alpha = 0.7, boundary = 0) +
-      geom_vline(data = own, aes(xintercept = rate), color = "#EF3E33", linewidth = 1) +
+      geom_histogram(binwidth = 0.02, fill = "grey60", alpha = 0.7, boundary = 0) +
+      geom_vline(data = own, aes(xintercept = rate, color = herd_label), linewidth = 1) +
       facet_wrap(~lact_group, scales = "free_y") +
       scale_x_continuous(labels = percent, limits = c(0, 1)) +
+      scale_color_manual(values = own_line_colors) +
       labs(
         title = paste("Peer herd", measure_label, "(each herd's own recent window)"),
-        subtitle = "Red line marks Monte Vista's rate over the same window",
-        x = measure_label, y = "Peer herds"
+        subtitle = "Vertical lines mark each of your herds over the same window",
+        x = measure_label, y = "Peer herds", color = NULL
       ) +
-      theme_minimal(base_size = 12)
+      theme_minimal(base_size = 12) +
+      theme(legend.position = "bottom")
   })
 }
 
@@ -301,7 +394,7 @@ rate_nav_panel <- function(id_prefix, title) {
       nav_panel(
         "Trend",
         card(
-          card_header(sprintf("Monthly %s — Monte Vista vs. peer population", title)),
+          card_header(sprintf("Monthly %s — your herds vs. peer population", title)),
           plotOutput(paste0(id_prefix, "trend_plot"), height = "480px")
         )
       ),
@@ -313,7 +406,7 @@ rate_nav_panel <- function(id_prefix, title) {
           value_box("Peer herds excluded (thin data)", textOutput(paste0(id_prefix, "n_excluded"), inline = TRUE))
         ),
         card(
-          card_header("Monte Vista's position in the peer distribution"),
+          card_header("Your herds' position in the peer distribution"),
           gt_output(paste0(id_prefix, "rank_table"))
         ),
         card(
@@ -335,17 +428,32 @@ rate_nav_panel <- function(id_prefix, title) {
 # UI
 # =========================================================================
 ui <- page_sidebar(
-  title = "Monte Vista vs. Parnell Peer Herds",
+  title = "Your Herds vs. Parnell Peer Herds",
   theme = bs_theme(bootswatch = "flatly"),
 
   sidebar = sidebar(
     title = "Settings",
+    checkboxGroupInput("own_herds", "Your herds:",
+                        choices = own_herds, selected = own_herds),
     checkboxGroupInput("lact_groups", "Lactation groups:",
                         choices = LACT_GROUPS, selected = LACT_GROUPS),
     numericInput("n_months", "Months of recent data used for ranking:",
                  value = 12, min = 3, max = 36, step = 1),
     numericInput("min_deno", "Exclude peer herds below this denominator in that window:",
                  value = 30, min = 0, max = 200, step = 10),
+    sliderInput("loess_span", "Trend sensitivity:",
+                min = 0.1, max = 1, value = 0.5, step = 0.05),
+    helpText("Loess span for the trend lines — lower follows the data more closely."),
+    checkboxInput("show_points", "Show monthly points", value = TRUE),
+    checkboxInput("show_se", "Show trend confidence band", value = FALSE),
+    numericInput("trim_recent", "Drop most recent months (outcome lag):",
+                 value = 2, min = 0, max = 12, step = 1),
+    numericInput("min_frac_pct", "Minimum month size (% of a line's typical denominator):",
+                 value = 50, min = 0, max = 100, step = 10),
+    helpText("Edge trimming: recent months read falsely low because pregnancy",
+             "diagnoses lag breedings, and a line's earliest months can be thin",
+             "(ramp-in). Trimmed months are excluded from the trend lines but",
+             "still show as hollow points."),
     hr(),
     helpText(sprintf("Peer population: %d anonymized herds from data/parnell_files.", n_peer_herds)),
     helpText("Peer herds are identified only as Peer-001, Peer-002, etc. No herd name,",
@@ -359,7 +467,7 @@ ui <- page_sidebar(
       "Overview",
       layout_columns(
         fill = FALSE,
-        value_box("Farm", "Monte Vista"),
+        value_box("Your herds", as.character(length(own_herds))),
         value_box("Peer herds", as.character(n_peer_herds)),
         value_box("Own data range", paste(format(min(own_bred_events$date_event, na.rm = TRUE), "%b %Y"),
                                            "–", format(own_date_max_pull, "%b %Y")))
@@ -367,8 +475,8 @@ ui <- page_sidebar(
       card(
         card_header("What's here"),
         markdown(paste(
-          "Six reproductive measures, each showing Monte Vista's own monthly trend against the",
-          "pooled peer population, and where Monte Vista's recent performance ranks among the",
+          "Six reproductive measures, each showing your herds' own monthly trends against the",
+          "pooled peer population, and where each herd's recent performance ranks among the",
           "451 peer herds: **Insemination Rate**, **Conception Rate**, **Pregnancy Rate**,",
           "**Rebreed Rate**, **Abortion Rate**, and **DIM Milestones** (100/150/200 days).",
           "See the **About** tab for definitions, data sources, and the method's limitations."
@@ -383,9 +491,9 @@ ui <- page_sidebar(
     nav_panel(
       "Rebreeds & Abortions",
       navset_tab(
-        nav_panel("Rebreed Trend", card(card_header("Monthly Rebreed Rate — Monte Vista vs. peer population"),
+        nav_panel("Rebreed Trend", card(card_header("Monthly Rebreed Rate — your herds vs. peer population"),
                                          plotOutput("rebreed_trend_plot", height = "420px"))),
-        nav_panel("Abortion Trend", card(card_header("Monthly Abortion Rate — Monte Vista vs. peer population"),
+        nav_panel("Abortion Trend", card(card_header("Monthly Abortion Rate — your herds vs. peer population"),
                                           plotOutput("abortion_trend_plot", height = "420px")))
       )
     ),
@@ -457,59 +565,92 @@ server <- function(input, output, session) {
   })
   n_months <- reactive({ req(!is.na(input$n_months)); input$n_months })
   min_deno <- reactive({ req(!is.na(input$min_deno)); input$min_deno })
+  selected_herds <- reactive({
+    req(length(input$own_herds) > 0)
+    input$own_herds
+  })
+  loess_span  <- reactive({ req(!is.na(input$loess_span)); input$loess_span })
+  show_points <- reactive({ isTRUE(input$show_points) })
+  show_se     <- reactive({ isTRUE(input$show_se) })
+  min_frac    <- reactive({ req(!is.na(input$min_frac_pct)); input$min_frac_pct / 100 })
+  # Outcome-dependent measures (CR/PR/abortion) wait on a pregnancy diagnosis,
+  # so they get the full trim; breeding-based measures (IR/rebreed) are known
+  # at the breeding itself, so only the trailing partial month is suspect.
+  trim_outcome <- reactive({ req(!is.na(input$trim_recent)); as.integer(input$trim_recent) })
+  trim_bred    <- reactive({ max(0L, trim_outcome() - 1L) })
 
-  ir_views <- make_rate_views(peer_ir_pr, own_ir_pr_monthly, "n_bred", "n_eligible", active_groups, n_months, min_deno)
-  cr_views <- make_rate_views(peer_cr,    own_cr_monthly,    "preg",   "deno",       active_groups, n_months, min_deno)
-  pr_views <- make_rate_views(peer_ir_pr, own_ir_pr_monthly, "n_pregnant", "n_eligible", active_groups, n_months, min_deno)
+  ir_views <- make_rate_views(peer_ir_pr, own_ir_pr_monthly, "n_bred", "n_eligible", active_groups, n_months, min_deno, selected_herds, trim_bred, min_frac)
+  cr_views <- make_rate_views(peer_cr,    own_cr_monthly,    "preg",   "deno",       active_groups, n_months, min_deno, selected_herds, trim_outcome, min_frac)
+  pr_views <- make_rate_views(peer_ir_pr, own_ir_pr_monthly, "n_pregnant", "n_eligible", active_groups, n_months, min_deno, selected_herds, trim_outcome, min_frac)
 
-  attach_rate_outputs(output, "ir_", ir_views, "Insemination Rate")
-  attach_rate_outputs(output, "cr_", cr_views, "Conception Rate")
-  attach_rate_outputs(output, "pr_", pr_views, "Pregnancy Rate")
+  attach_rate_outputs(output, "ir_", ir_views, "Insemination Rate", loess_span, show_points, show_se)
+  attach_rate_outputs(output, "cr_", cr_views, "Conception Rate", loess_span, show_points, show_se)
+  attach_rate_outputs(output, "pr_", pr_views, "Pregnancy Rate", loess_span, show_points, show_se)
 
   # -- Rebreeds & Abortions: herd-wide trend only, no lact_group facet -----
   rebreed_trend_data <- reactive({
     bind_rows(
       peer_rebreed %>% fxn_pool_rate("n_rebreeds", "n_total_bred", month) %>% mutate(herd_label = "Peer population (pooled)"),
-      own_rebreed_monthly %>% fxn_pool_rate("n_rebreeds", "n_total_bred", month) %>% mutate(herd_label = "Monte Vista")
-    )
+      own_rebreed_monthly %>% filter(herd_label %in% selected_herds()) %>%
+        fxn_pool_rate("n_rebreeds", "n_total_bred", herd_label, month)
+    ) %>%
+      filter(n > 0) %>%
+      flag_edge_months(trim_recent = trim_bred(), min_frac = min_frac()) %>%
+      window_display()
   })
 
   output$rebreed_trend_plot <- renderPlot({
-    rebreed_trend_data() %>%
-      filter(n > 0) %>%
-      ggplot(aes(month, rate, color = herd_label, linetype = herd_label)) +
+    dat <- rebreed_trend_data()
+    ggplot(dat, aes(month, rate, color = herd_label, linetype = herd_label)) +
       geom_ribbon(
-        data = . %>% filter(herd_label == "Peer population (pooled)"),
-        aes(ymin = rate_lower, ymax = rate_upper), alpha = 0.15, color = NA, fill = "steelblue"
+        data = dat %>% filter(herd_label == "Peer population (pooled)", keep),
+        aes(ymin = rate_lower, ymax = rate_upper), alpha = 0.2, color = NA, fill = "grey60"
       ) +
-      geom_line(linewidth = 1) + geom_point(size = 1.2) +
+      (if (show_points()) geom_point(aes(shape = keep), size = 1.1, alpha = 0.35)) +
+      geom_smooth(data = dat %>% filter(keep),
+                  aes(fill = herd_label, weight = n), method = "loess", span = loess_span(),
+                  se = show_se(), alpha = 0.15, linewidth = 1) +
       scale_y_continuous(labels = percent) +
-      scale_color_manual(values = c("Monte Vista" = "#0B4568", "Peer population (pooled)" = "steelblue")) +
-      scale_linetype_manual(values = c("Monte Vista" = "solid", "Peer population (pooled)" = "dashed")) +
-      labs(title = "Rebreed Rate by month", x = NULL, y = "Rebreed Rate", color = NULL, linetype = NULL) +
+      scale_shape_manual(values = c(`TRUE` = 16, `FALSE` = 1), guide = "none") +
+      line_color_scale +
+      line_linetype_scale +
+      line_fill_scale +
+      labs(title = "Rebreed Rate by month",
+           subtitle = "Denominator-weighted loess trends; hollow points are trimmed edge months",
+           x = NULL, y = "Rebreed Rate", color = NULL, linetype = NULL) +
       theme_minimal(base_size = 12) + theme(legend.position = "bottom")
   })
 
   abortion_trend_data <- reactive({
     bind_rows(
       peer_abortion %>% fxn_pool_rate("n_abortions", "total_pregnancies", month) %>% mutate(herd_label = "Peer population (pooled)"),
-      own_abortion_monthly %>% fxn_pool_rate("n_abortions", "total_pregnancies", month) %>% mutate(herd_label = "Monte Vista")
-    )
+      own_abortion_monthly %>% filter(herd_label %in% selected_herds()) %>%
+        fxn_pool_rate("n_abortions", "total_pregnancies", herd_label, month)
+    ) %>%
+      filter(n > 0) %>%
+      flag_edge_months(trim_recent = trim_outcome(), min_frac = min_frac()) %>%
+      window_display()
   })
 
   output$abortion_trend_plot <- renderPlot({
-    abortion_trend_data() %>%
-      filter(n > 0) %>%
-      ggplot(aes(month, rate, color = herd_label, linetype = herd_label)) +
+    dat <- abortion_trend_data()
+    ggplot(dat, aes(month, rate, color = herd_label, linetype = herd_label)) +
       geom_ribbon(
-        data = . %>% filter(herd_label == "Peer population (pooled)"),
-        aes(ymin = rate_lower, ymax = rate_upper), alpha = 0.15, color = NA, fill = "steelblue"
+        data = dat %>% filter(herd_label == "Peer population (pooled)", keep),
+        aes(ymin = rate_lower, ymax = rate_upper), alpha = 0.2, color = NA, fill = "grey60"
       ) +
-      geom_line(linewidth = 1) + geom_point(size = 1.2) +
+      (if (show_points()) geom_point(aes(shape = keep), size = 1.1, alpha = 0.35)) +
+      geom_smooth(data = dat %>% filter(keep),
+                  aes(fill = herd_label, weight = n), method = "loess", span = loess_span(),
+                  se = show_se(), alpha = 0.15, linewidth = 1) +
       scale_y_continuous(labels = percent) +
-      scale_color_manual(values = c("Monte Vista" = "#0B4568", "Peer population (pooled)" = "steelblue")) +
-      scale_linetype_manual(values = c("Monte Vista" = "solid", "Peer population (pooled)" = "dashed")) +
-      labs(title = "Abortion Rate by breeding cohort", x = NULL, y = "Abortion Rate", color = NULL, linetype = NULL) +
+      scale_shape_manual(values = c(`TRUE` = 16, `FALSE` = 1), guide = "none") +
+      line_color_scale +
+      line_linetype_scale +
+      line_fill_scale +
+      labs(title = "Abortion Rate by breeding cohort",
+           subtitle = "Denominator-weighted loess trends; hollow points are trimmed edge months",
+           x = NULL, y = "Abortion Rate", color = NULL, linetype = NULL) +
       theme_minimal(base_size = 12) + theme(legend.position = "bottom")
   })
 
@@ -517,26 +658,36 @@ server <- function(input, output, session) {
   dim_trend_data <- reactive({
     bind_rows(
       peer_dim %>% fxn_pool_rate("pregnant_count", "total_cows", calving_month, milestone) %>% mutate(herd_label = "Peer population (pooled)"),
-      own_dim_milestone %>% fxn_pool_rate("pregnant_count", "total_cows", calving_month, milestone) %>% mutate(herd_label = "Monte Vista")
+      own_dim_milestone %>% filter(herd_label %in% selected_herds()) %>%
+        fxn_pool_rate("pregnant_count", "total_cows", herd_label, calving_month, milestone)
     ) %>%
-      mutate(milestone = factor(milestone, levels = c("100 DIM", "150 DIM", "200 DIM")))
+      mutate(milestone = factor(milestone, levels = c("100 DIM", "150 DIM", "200 DIM"))) %>%
+      filter(n > 0) %>%
+      # fxn_dim_milestone already trims right-censored cohorts, so no
+      # trailing trim here — just the thin-denominator floor.
+      flag_edge_months(trim_recent = 0L, min_frac = min_frac(), milestone, time_col = calving_month) %>%
+      window_display(milestone, time_col = calving_month)
   })
 
   output$dim_plot <- renderPlot({
-    dim_trend_data() %>%
-      filter(n > 0) %>%
-      ggplot(aes(calving_month, rate, color = herd_label, linetype = herd_label)) +
+    dat <- dim_trend_data()
+    ggplot(dat, aes(calving_month, rate, color = herd_label, linetype = herd_label)) +
       geom_hline(yintercept = 0.50, linetype = "dashed", color = "steelblue", linewidth = 0.5, alpha = 0.6) +
       geom_hline(yintercept = 0.75, linetype = "dashed", color = "darkgreen", linewidth = 0.5, alpha = 0.6) +
       geom_hline(yintercept = 0.90, linetype = "dashed", color = "purple4", linewidth = 0.5, alpha = 0.6) +
-      geom_line(linewidth = 1) + geom_point(size = 1.1) +
+      (if (show_points()) geom_point(aes(shape = keep), size = 1.0, alpha = 0.35)) +
+      geom_smooth(data = dat %>% filter(keep),
+                  aes(fill = herd_label, weight = n), method = "loess", span = loess_span(),
+                  se = show_se(), alpha = 0.15, linewidth = 1) +
       facet_wrap(~milestone) +
       scale_y_continuous(labels = percent, limits = c(0, 1), breaks = seq(0, 1, 0.25)) +
-      scale_color_manual(values = c("Monte Vista" = "#0B4568", "Peer population (pooled)" = "steelblue")) +
-      scale_linetype_manual(values = c("Monte Vista" = "solid", "Peer population (pooled)" = "dashed")) +
+      scale_shape_manual(values = c(`TRUE` = 16, `FALSE` = 1), guide = "none") +
+      line_color_scale +
+      line_linetype_scale +
+      line_fill_scale +
       labs(
         title = "Pregnancy rate at 100 / 150 / 200 DIM by calving cohort",
-        subtitle = "Dashed lines are target benchmarks (50% / 75% / 90%)",
+        subtitle = "Loess trends (see Trend sensitivity); horizontal dashed lines are target benchmarks (50% / 75% / 90%)",
         x = NULL, y = "Pregnant by milestone", color = NULL, linetype = NULL
       ) +
       theme_minimal(base_size = 11) +
