@@ -39,8 +39,11 @@ fxn_pregnancy_segments <- function(bred_events) {
 #   (already filtered to LACT > 0 / the lactation groups of interest).
 # preg_segments: from fxn_pregnancy_segments().
 # months: vector of first-of-month Dates to snapshot.
+# dnb_dates (optional): cowid_lact, date_dnb — cows stop being eligible from
+#   their DNB date onward. Only usable where the event stream carries DNB
+#   events (the peer extract does not, so the peer build never passes this).
 # Returns one row per eligible cow-lactation-month: cowid_lact, lact_group, month.
-fxn_monthly_eligible <- function(lact_data, preg_segments, months, vwp) {
+fxn_monthly_eligible <- function(lact_data, preg_segments, months, vwp, dnb_dates = NULL) {
   purrr::map_dfr(months, function(m) {
     m_start <- as.Date(m)
     m_end   <- lubridate::ceiling_date(m_start, "month") - lubridate::days(1)
@@ -53,6 +56,14 @@ fxn_monthly_eligible <- function(lact_data, preg_segments, months, vwp) {
         as.numeric(m_start - date_fresh) > vwp
       )
     if (nrow(elig) == 0) return(NULL)
+
+    if (!is.null(dnb_dates)) {
+      dnb_now <- dnb_dates %>%
+        filter(date_dnb <= m_start) %>%
+        distinct(cowid_lact)
+      elig <- elig %>% anti_join(dnb_now, by = "cowid_lact")
+      if (nrow(elig) == 0) return(NULL)
+    }
 
     preg_now <- preg_segments %>%
       filter(preg_start <= m_start, is.na(preg_end) | preg_end > m_start) %>%
@@ -67,9 +78,10 @@ fxn_monthly_eligible <- function(lact_data, preg_segments, months, vwp) {
 
 # Combines eligibility with that month's BRED/pregnancy flags into the
 # monthly IR/PR summary: month, lact_group, n_eligible, n_bred, n_pregnant.
-fxn_monthly_ir_pr <- function(lact_data, bred_events, months, vwp) {
+# dnb_dates is passed through to fxn_monthly_eligible (optional, see there).
+fxn_monthly_ir_pr <- function(lact_data, bred_events, months, vwp, dnb_dates = NULL) {
   preg_segments <- fxn_pregnancy_segments(bred_events)
-  eligible <- fxn_monthly_eligible(lact_data, preg_segments, months, vwp)
+  eligible <- fxn_monthly_eligible(lact_data, preg_segments, months, vwp, dnb_dates)
   if (nrow(eligible) == 0) return(eligible[0, ] %>% mutate(n_eligible = integer(), n_bred = integer(), n_pregnant = integer()))
 
   bred_flags <- bred_events %>%

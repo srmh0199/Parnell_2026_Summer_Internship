@@ -118,18 +118,31 @@ own_bred_events <- events_formatted %>%
 
 own_herds <- sort(unique(own_bred_events$herd_label))
 
+# DNB dates per cow-lactation. The full event stream is available for own
+# herds (unlike the peer extract), so IR/PR can optionally drop cows from
+# their first DNB event onward.
+own_dnb_dates <- events_formatted %>%
+  filter(toupper(event) == "DNB", !is.na(date_event)) %>%
+  group_by(cowid_lact = id_animal_lact) %>%
+  summarise(date_dnb = min(date_event), .groups = "drop")
+
 # Month range and date_max_pull are per herd — pulls can be days or weeks
 # apart, and sharing a calendar range would fabricate empty months.
-own_ir_pr_monthly <- map_dfr(own_herds, function(h) {
-  bred_h <- own_bred_events %>% filter(herd_label == h)
-  lact_h <- own_lact_data %>% filter(herd_label == h)
-  months_h <- seq(
-    floor_date(min(bred_h$date_event, na.rm = TRUE), "month"),
-    floor_date(max(bred_h$date_event, na.rm = TRUE), "month"),
-    by = "month"
-  )
-  fxn_monthly_ir_pr(lact_h, bred_h, months_h, VWP) %>% mutate(herd_label = h)
-})
+compute_own_ir_pr <- function(dnb_dates = NULL) {
+  map_dfr(own_herds, function(h) {
+    bred_h <- own_bred_events %>% filter(herd_label == h)
+    lact_h <- own_lact_data %>% filter(herd_label == h)
+    months_h <- seq(
+      floor_date(min(bred_h$date_event, na.rm = TRUE), "month"),
+      floor_date(max(bred_h$date_event, na.rm = TRUE), "month"),
+      by = "month"
+    )
+    fxn_monthly_ir_pr(lact_h, bred_h, months_h, VWP, dnb_dates = dnb_dates) %>%
+      mutate(herd_label = h)
+  })
+}
+own_ir_pr_monthly      <- compute_own_ir_pr()
+own_ir_pr_monthly_nodnb <- compute_own_ir_pr(own_dnb_dates)
 
 own_rebreed_monthly <- own_bred_events %>%
   filter(!is.na(date_event)) %>%
@@ -207,7 +220,9 @@ drop_recent_months <- function(df, trim_recent, time_col = month) {
 window_display <- function(df, ..., n_years = 3, time_col = month) {
   df %>%
     group_by(herd_label, ...) %>%
-    filter(any(keep), {{ time_col }} >= max({{ time_col }}[keep]) %m-% lubridate::years(n_years)) %>%
+    mutate(.anchor = if (any(keep)) max({{ time_col }}[keep]) else as.Date(NA)) %>%
+    filter(!is.na(.anchor), {{ time_col }} >= .anchor %m-% lubridate::years(n_years)) %>%
+    select(-.anchor) %>%
     ungroup()
 }
 
@@ -238,12 +253,14 @@ five_band <- function(x, breaks) {
 # each repeat the same reactive logic under a different measure name.
 make_rate_views <- function(peer_df, own_df, k_col, n_col, active_groups, n_months, min_deno, selected_herds,
                             trim_lag, min_frac) {
+  # own_df is a REACTIVE (so the DNB-exclusion toggle can swap the own-side
+  # table); peer_df stays a plain data frame.
   trend_data <- reactive({
     peer_line <- peer_df %>%
       filter(lact_group %in% active_groups()) %>%
       fxn_pool_rate(k_col, n_col, month, lact_group) %>%
       mutate(herd_label = "Peer population (pooled)")
-    own_line <- own_df %>%
+    own_line <- own_df() %>%
       filter(herd_label %in% selected_herds(), lact_group %in% active_groups()) %>%
       fxn_pool_rate(k_col, n_col, herd_label, month, lact_group)
     bind_rows(peer_line, own_line) %>%
@@ -267,7 +284,7 @@ make_rate_views <- function(peer_df, own_df, k_col, n_col, active_groups, n_mont
 
   own_pooled <- reactive({
     window_recent(
-      own_df %>% filter(herd_label %in% selected_herds(), lact_group %in% active_groups()) %>%
+      own_df() %>% filter(herd_label %in% selected_herds(), lact_group %in% active_groups()) %>%
         drop_recent_months(trim_lag()),
       n_months()
     ) %>%
@@ -446,6 +463,11 @@ ui <- page_sidebar(
     helpText("Loess span for the trend lines — lower follows the data more closely."),
     checkboxInput("show_points", "Show monthly points", value = TRUE),
     checkboxInput("show_se", "Show trend confidence band", value = FALSE),
+    checkboxInput("exclude_dnb", "Exclude DNB cows from my herds (peers unchanged)", value = FALSE),
+    helpText("DNB exclusion uses your herds' own DNB events for IR/PR eligibility.",
+             "The peer extract has no DNB events, so the peer line keeps the",
+             "proxy definition — with this on, your herds gain a definitional",
+             "edge in IR/PR trends and rankings."),
     numericInput("trim_recent", "Drop most recent months (outcome lag):",
                  value = 2, min = 0, max = 12, step = 1),
     numericInput("min_frac_pct", "Minimum month size (% of a line's typical denominator):",
@@ -578,10 +600,13 @@ server <- function(input, output, session) {
   # at the breeding itself, so only the trailing partial month is suspect.
   trim_outcome <- reactive({ req(!is.na(input$trim_recent)); as.integer(input$trim_recent) })
   trim_bred    <- reactive({ max(0L, trim_outcome() - 1L) })
+  own_ir_pr_active <- reactive({
+    if (isTRUE(input$exclude_dnb)) own_ir_pr_monthly_nodnb else own_ir_pr_monthly
+  })
 
-  ir_views <- make_rate_views(peer_ir_pr, own_ir_pr_monthly, "n_bred", "n_eligible", active_groups, n_months, min_deno, selected_herds, trim_bred, min_frac)
-  cr_views <- make_rate_views(peer_cr,    own_cr_monthly,    "preg",   "deno",       active_groups, n_months, min_deno, selected_herds, trim_outcome, min_frac)
-  pr_views <- make_rate_views(peer_ir_pr, own_ir_pr_monthly, "n_pregnant", "n_eligible", active_groups, n_months, min_deno, selected_herds, trim_outcome, min_frac)
+  ir_views <- make_rate_views(peer_ir_pr, own_ir_pr_active, "n_bred", "n_eligible", active_groups, n_months, min_deno, selected_herds, trim_bred, min_frac)
+  cr_views <- make_rate_views(peer_cr,    reactive(own_cr_monthly), "preg", "deno", active_groups, n_months, min_deno, selected_herds, trim_outcome, min_frac)
+  pr_views <- make_rate_views(peer_ir_pr, own_ir_pr_active, "n_pregnant", "n_eligible", active_groups, n_months, min_deno, selected_herds, trim_outcome, min_frac)
 
   attach_rate_outputs(output, "ir_", ir_views, "Insemination Rate", loess_span, show_points, show_se)
   attach_rate_outputs(output, "cr_", cr_views, "Conception Rate", loess_span, show_points, show_se)
