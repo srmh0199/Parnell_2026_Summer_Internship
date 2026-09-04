@@ -38,11 +38,16 @@ VWP <- 50L  # matches ParnellRepro/app.R's default voluntary waiting period
 LACT_GROUPS <- c("Lact 1", "Lact 2", "Lact 3+")
 
 # ---- Load the precomputed, anonymized peer summary -----------------------
-peer_path <- here::here("data", "parnell_files", "benchmark_data.rds")
+# Prefer the v2 build (build_parnell_benchmark_v2.R: complete no-QC-filter
+# breedings, plus a DNB-excluded IR/PR variant per peer herd so the DNB
+# toggle can be symmetric). Fall back to Sarah's v1 file otherwise.
+peer_path_v2 <- here::here("data", "parnell_files", "benchmark_data_v2.rds")
+peer_path_v1 <- here::here("data", "parnell_files", "benchmark_data.rds")
+peer_path <- if (file.exists(peer_path_v2)) peer_path_v2 else peer_path_v1
 if (!file.exists(peer_path)) {
   stop(
     "Missing ", peer_path,
-    ".\nRun build_parnell_benchmark.R from the project root first."
+    ".\nRun build_parnell_benchmark.R (or _v2) from the project root first."
   )
 }
 benchmark_data <- readRDS(peer_path)
@@ -51,6 +56,8 @@ peer_ir_pr    <- benchmark_data$ir_pr_monthly
 peer_rebreed  <- benchmark_data$rebreed_monthly
 peer_abortion <- benchmark_data$abortion_monthly
 peer_dim      <- benchmark_data$dim_milestone
+peer_ir_pr_dnbx <- benchmark_data$ir_pr_monthly_dnbx  # NULL on a v1 file
+have_peer_dnbx  <- !is.null(peer_ir_pr_dnbx)
 
 n_peer_herds <- n_distinct(peer_cr$herd_label)
 
@@ -253,10 +260,10 @@ five_band <- function(x, breaks) {
 # each repeat the same reactive logic under a different measure name.
 make_rate_views <- function(peer_df, own_df, k_col, n_col, active_groups, n_months, min_deno, selected_herds,
                             trim_lag, min_frac) {
-  # own_df is a REACTIVE (so the DNB-exclusion toggle can swap the own-side
-  # table); peer_df stays a plain data frame.
+  # own_df and peer_df are both REACTIVES so the DNB-exclusion toggle can
+  # swap either side's table.
   trend_data <- reactive({
-    peer_line <- peer_df %>%
+    peer_line <- peer_df() %>%
       filter(lact_group %in% active_groups()) %>%
       fxn_pool_rate(k_col, n_col, month, lact_group) %>%
       mutate(herd_label = "Peer population (pooled)")
@@ -271,7 +278,7 @@ make_rate_views <- function(peer_df, own_df, k_col, n_col, active_groups, n_mont
 
   peer_ranked <- reactive({
     window_recent(
-      peer_df %>% filter(lact_group %in% active_groups()) %>% drop_recent_months(trim_lag()),
+      peer_df() %>% filter(lact_group %in% active_groups()) %>% drop_recent_months(trim_lag()),
       n_months()
     ) %>%
       fxn_pool_rate(k_col, n_col, herd_label, lact_group) %>%
@@ -463,11 +470,21 @@ ui <- page_sidebar(
     helpText("Loess span for the trend lines — lower follows the data more closely."),
     checkboxInput("show_points", "Show monthly points", value = TRUE),
     checkboxInput("show_se", "Show trend confidence band", value = FALSE),
-    checkboxInput("exclude_dnb", "Exclude DNB cows from my herds (peers unchanged)", value = FALSE),
-    helpText("DNB exclusion uses your herds' own DNB events for IR/PR eligibility.",
-             "The peer extract has no DNB events, so the peer line keeps the",
-             "proxy definition — with this on, your herds gain a definitional",
-             "edge in IR/PR trends and rankings."),
+    checkboxInput("exclude_dnb",
+                  if (have_peer_dnbx) "Exclude DNB cows (your herds + peers)"
+                  else "Exclude DNB cows from my herds (peers unchanged)",
+                  value = FALSE),
+    if (have_peer_dnbx) {
+      helpText("DNB exclusion drops each cow from IR/PR eligibility from her",
+               "first DNB event onward — applied identically to your herds and",
+               "every peer herd (benchmark_data_v2), so the comparison stays",
+               "symmetric either way.")
+    } else {
+      helpText("DNB exclusion uses your herds' own DNB events for IR/PR eligibility.",
+               "The peer extract has no DNB events, so the peer line keeps the",
+               "proxy definition — with this on, your herds gain a definitional",
+               "edge in IR/PR trends and rankings.")
+    },
     numericInput("trim_recent", "Drop most recent months (outcome lag):",
                  value = 2, min = 0, max = 12, step = 1),
     numericInput("min_frac_pct", "Minimum month size (% of a line's typical denominator):",
@@ -603,10 +620,13 @@ server <- function(input, output, session) {
   own_ir_pr_active <- reactive({
     if (isTRUE(input$exclude_dnb)) own_ir_pr_monthly_nodnb else own_ir_pr_monthly
   })
+  peer_ir_pr_active <- reactive({
+    if (isTRUE(input$exclude_dnb) && have_peer_dnbx) peer_ir_pr_dnbx else peer_ir_pr
+  })
 
-  ir_views <- make_rate_views(peer_ir_pr, own_ir_pr_active, "n_bred", "n_eligible", active_groups, n_months, min_deno, selected_herds, trim_bred, min_frac)
-  cr_views <- make_rate_views(peer_cr,    reactive(own_cr_monthly), "preg", "deno", active_groups, n_months, min_deno, selected_herds, trim_outcome, min_frac)
-  pr_views <- make_rate_views(peer_ir_pr, own_ir_pr_active, "n_pregnant", "n_eligible", active_groups, n_months, min_deno, selected_herds, trim_outcome, min_frac)
+  ir_views <- make_rate_views(peer_ir_pr_active, own_ir_pr_active, "n_bred", "n_eligible", active_groups, n_months, min_deno, selected_herds, trim_bred, min_frac)
+  cr_views <- make_rate_views(reactive(peer_cr), reactive(own_cr_monthly), "preg", "deno", active_groups, n_months, min_deno, selected_herds, trim_outcome, min_frac)
+  pr_views <- make_rate_views(peer_ir_pr_active, own_ir_pr_active, "n_pregnant", "n_eligible", active_groups, n_months, min_deno, selected_herds, trim_outcome, min_frac)
 
   attach_rate_outputs(output, "ir_", ir_views, "Insemination Rate", loess_span, show_points, show_se)
   attach_rate_outputs(output, "cr_", cr_views, "Conception Rate", loess_span, show_points, show_se)
