@@ -360,14 +360,16 @@ rate_nav_panel <- function(id_prefix, title) {
         "Where It Sits",
         layout_columns(
           fill = FALSE,
-          value_box("Peer herds ranked", textOutput(paste0(id_prefix, "n_ranked"), inline = TRUE)),
-          value_box("Peer herds excluded (thin data)", textOutput(paste0(id_prefix, "n_excluded"), inline = TRUE))
+          value_box("Peer herds ranked", textOutput(paste0(id_prefix, "n_ranked"), inline = TRUE), height = "120px"),
+          value_box("Peer herds excluded (thin data)", textOutput(paste0(id_prefix, "n_excluded"), inline = TRUE), height = "120px")
         ),
         card(
+          fill = FALSE,
           card_header("Your herds' position in the peer distribution"),
           gt_output(paste0(id_prefix, "rank_table"))
         ),
         card(
+          fill = FALSE,
           card_header("Distribution of peer herds"),
           plotOutput(paste0(id_prefix, "density_plot"), height = "420px")
         ),
@@ -440,16 +442,18 @@ ui <- page_sidebar(
       "Overview",
       layout_columns(
         fill = FALSE,
-        value_box("Your herds", as.character(length(own_herds))),
-        value_box("Peer herds", as.character(n_peer_herds)),
-        value_box("Own data through", format(own_date_max_pull, "%b %d, %Y")),
-        value_box("Peer file built", peer_built)
+        value_box("Your herds", as.character(length(own_herds)), height = "140px"),
+        value_box("Peer herds", as.character(n_peer_herds), height = "140px"),
+        value_box("Own data through", format(own_date_max_pull, "%b %d, %Y"), height = "140px"),
+        value_box("Peer file built", peer_built, height = "140px")
       ),
       card(
+        fill = FALSE,
         card_header("Data currency by herd"),
         gt_output("meta_table")
       ),
       card(
+        fill = FALSE,
         card_header("What's here"),
         markdown(paste(
           sprintf("Six reproductive measures, each showing your herds' own monthly trends against the"),
