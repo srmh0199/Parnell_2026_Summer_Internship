@@ -31,6 +31,12 @@ library(lubridate)
 library(scales)
 library(here)
 
+# Compact value-box value: bslib's default value font is headline-sized and
+# makes the boxes dominate the page; this keeps them one tidy line.
+compact_value <- function(x) {
+  tags$span(x, style = "font-size: 1.3rem; font-weight: 600; white-space: nowrap;")
+}
+
 # Resolve a project-relative path: an app-local copy first (the deployed
 # shinyapps.io bundle is the app folder alone, with functions/ and data/
 # synced in by deploy_shinyapps.R), else the repo root for development.
@@ -360,8 +366,12 @@ rate_nav_panel <- function(id_prefix, title) {
         "Where It Sits",
         layout_columns(
           fill = FALSE,
-          value_box("Peer herds ranked", textOutput(paste0(id_prefix, "n_ranked"), inline = TRUE), height = "120px"),
-          value_box("Peer herds excluded (thin data)", textOutput(paste0(id_prefix, "n_excluded"), inline = TRUE), height = "120px")
+          value_box("Peer herds ranked",
+                    compact_value(textOutput(paste0(id_prefix, "n_ranked"), inline = TRUE)),
+                    height = "90px"),
+          value_box("Peer herds excluded (thin data)",
+                    compact_value(textOutput(paste0(id_prefix, "n_excluded"), inline = TRUE)),
+                    height = "90px")
         ),
         card(
           fill = FALSE,
@@ -442,10 +452,10 @@ ui <- page_sidebar(
       "Overview",
       layout_columns(
         fill = FALSE,
-        value_box("Your herds", as.character(length(own_herds)), height = "140px"),
-        value_box("Peer herds", as.character(n_peer_herds), height = "140px"),
-        value_box("Own data through", format(own_date_max_pull, "%b %d, %Y"), height = "140px"),
-        value_box("Peer file built", peer_built, height = "140px")
+        value_box("Your herds", compact_value(length(own_herds)), height = "90px"),
+        value_box("Peer herds", compact_value(n_peer_herds), height = "90px"),
+        value_box("Own data through", compact_value(format(own_date_max_pull, "%b %d, %Y")), height = "90px"),
+        value_box("Peer file built", compact_value(peer_built), height = "90px")
       ),
       card(
         fill = FALSE,
