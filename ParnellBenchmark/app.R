@@ -31,8 +31,16 @@ library(lubridate)
 library(scales)
 library(here)
 
-source(here::here("functions", "fxn_parnell_cr.R"))
-source(here::here("functions", "fxn_parnell_eligibility.R"))
+# Resolve a project-relative path: an app-local copy first (the deployed
+# shinyapps.io bundle is the app folder alone, with functions/ and data/
+# synced in by deploy_shinyapps.R), else the repo root for development.
+proj_file <- function(...) {
+  local <- file.path(...)
+  if (file.exists(local)) local else here::here(...)
+}
+
+source(proj_file("functions", "fxn_parnell_cr.R"))
+source(proj_file("functions", "fxn_parnell_eligibility.R"))
 
 VWP <- 50L  # matches ParnellRepro/app.R's default voluntary waiting period
 LACT_GROUPS <- c("Lact 1", "Lact 2", "Lact 3+")
@@ -41,8 +49,8 @@ LACT_GROUPS <- c("Lact 1", "Lact 2", "Lact 3+")
 # Prefer the v2 build (build_parnell_benchmark_v2.R: complete no-QC-filter
 # breedings, plus a DNB-excluded IR/PR variant per peer herd so the DNB
 # toggle can be symmetric). Fall back to Sarah's v1 file otherwise.
-peer_path_v2 <- here::here("data", "parnell_files", "benchmark_data_v2.rds")
-peer_path_v1 <- here::here("data", "parnell_files", "benchmark_data.rds")
+peer_path_v2 <- proj_file("data", "parnell_files", "benchmark_data_v2.rds")
+peer_path_v1 <- proj_file("data", "parnell_files", "benchmark_data.rds")
 peer_path <- if (file.exists(peer_path_v2)) peer_path_v2 else peer_path_v1
 if (!file.exists(peer_path)) {
   stop(
@@ -67,9 +75,9 @@ n_peer_herds <- n_distinct(peer_cr$herd_label)
 # build_own_benchmark.R (monthly counts only — no cow-level data, so a
 # deployment needs neither event_files nor intermediate_files). Fallback for
 # development: compute live from the intermediate parquet (slow, ~90 s).
-source(here::here("functions", "fxn_own_herd_measures.R"))
+source(proj_file("functions", "fxn_own_herd_measures.R"))
 
-own_path <- here::here("data", "parnell_files", "own_data.rds")
+own_path <- proj_file("data", "parnell_files", "own_data.rds")
 if (file.exists(own_path)) {
   message("ParnellBenchmark: loading precomputed own-herd data (", own_path, ")")
   own_data <- readRDS(own_path)
