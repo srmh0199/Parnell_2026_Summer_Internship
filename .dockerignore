@@ -1,0 +1,11 @@
+# Whitelist build context: ONLY what deploy/Dockerfile copies may enter.
+# This guarantees cow-level herd data (data/event_files, data/
+# intermediate_files) and rendered reports never reach a Docker image.
+*
+!ParnellBenchmark/
+!functions/fxn_parnell_cr.R
+!functions/fxn_parnell_eligibility.R
+!functions/fxn_own_herd_measures.R
+!data/parnell_files/benchmark_data_v2.rds
+!data/parnell_files/own_data.rds
+!deploy/

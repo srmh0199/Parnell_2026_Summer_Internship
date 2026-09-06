@@ -58,123 +58,49 @@ peer_abortion <- benchmark_data$abortion_monthly
 peer_dim      <- benchmark_data$dim_milestone
 peer_ir_pr_dnbx <- benchmark_data$ir_pr_monthly_dnbx  # NULL on a v1 file
 have_peer_dnbx  <- !is.null(peer_ir_pr_dnbx)
+peer_built      <- format(file.mtime(peer_path), "%b %d, %Y")
 
 n_peer_herds <- n_distinct(peer_cr$herd_label)
 
-# ---- Load Monte Vista's own data and compute every measure the same way --
-data_dir  <- here::here("data", "intermediate_files")
-req_files <- c("events_formatted.parquet", "animal_lactations.parquet")
-missing   <- req_files[!file.exists(file.path(data_dir, req_files))]
-if (length(missing) > 0) {
-  stop(
-    "Missing data file(s) in ", data_dir, ": ", paste(missing, collapse = ", "),
-    ".\nRun step0_master_processing_my_data.R from the project root first."
+# ---- Load the own-herd side ----------------------------------------------
+# Preferred: the small precomputed aggregate file written by
+# build_own_benchmark.R (monthly counts only — no cow-level data, so a
+# deployment needs neither event_files nor intermediate_files). Fallback for
+# development: compute live from the intermediate parquet (slow, ~90 s).
+source(here::here("functions", "fxn_own_herd_measures.R"))
+
+own_path <- here::here("data", "parnell_files", "own_data.rds")
+if (file.exists(own_path)) {
+  message("ParnellBenchmark: loading precomputed own-herd data (", own_path, ")")
+  own_data <- readRDS(own_path)
+} else {
+  data_dir  <- here::here("data", "intermediate_files")
+  req_files <- c("events_formatted.parquet", "animal_lactations.parquet")
+  missing   <- req_files[!file.exists(file.path(data_dir, req_files))]
+  if (length(missing) > 0) {
+    stop(
+      "Missing ", own_path, " AND the fallback input(s) in ", data_dir, ": ",
+      paste(missing, collapse = ", "),
+      ".\nRun build_own_benchmark.R (preferred) or steps 0-2 from the project root first."
+    )
+  }
+  message("ParnellBenchmark: own_data.rds not found - computing own-herd measures live (slow); run build_own_benchmark.R to precompute")
+  own_data <- fxn_compute_own_measures(
+    read_parquet(file.path(data_dir, "events_formatted.parquet")),
+    read_parquet(file.path(data_dir, "animal_lactations.parquet")),
+    vwp = VWP
   )
 }
 
-events_formatted  <- read_parquet(file.path(data_dir, "events_formatted.parquet"))
-animal_lactations <- read_parquet(file.path(data_dir, "animal_lactations.parquet"))
-
-# The intermediate files can hold SEVERAL herds at once: Parnell-style pulls
-# processed with fxn_assign_id_animal_parnell prefix every id_animal with the
-# herd GUID, so that prefix splits the data back into herds here. Data built
-# with the default id function (e.g. Monte Vista's single CSV) has no GUID
-# prefix and falls back to one herd labeled "My Herd".
-own_herd_label <- function(id) {
-  key <- str_extract(id, "^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4,12}")
-  if_else(is.na(key), "My Herd", paste("Herd", str_sub(key, 1, 8)))
-}
-
-# events_formatted already carries its own lact_group ("Heifer"/"LACT 1"/
-# "LACT 2"/"LACT 3+"), so Conception Rate needs no join to animal_lactations.
-own_lact_map <- c("LACT 1" = "Lact 1", "LACT 2" = "Lact 2", "LACT 3+" = "Lact 3+")
-
-own_cr_monthly <- events_formatted %>%
-  filter(event == "BRED", lact_group %in% names(own_lact_map)) %>%
-  mutate(
-    herd_label = own_herd_label(id_animal),
-    lact_group = unname(own_lact_map[lact_group]),
-    month      = floor_date(date_event, "month")
-  ) %>%
-  fxn_standardize_for_CR() %>%
-  group_by(herd_label, month, lact_group, Rstandard) %>%
-  fxn_calculate_CR_main() %>%
-  ungroup() %>%
-  select(herd_label, month, lact_group, std_Open, std_Pregnant, std_Abort, std_Other, deno, preg, other, total)
-
-# IR / PR / Rebreed / Abortion / DIM milestones need date_fresh/date_dry/
-# date_archive, which only live in animal_lactations, reshaped to the same
-# cowid_lact / lact_group / date_fresh / date_dry / date_archive shape the
-# eligibility helpers expect from a peer herd's animal_lactations.parquet.
-own_lact_data <- animal_lactations %>%
-  filter(lact_number > 0) %>%
-  transmute(
-    herd_label = own_herd_label(id_animal),
-    cowid_lact = id_animal_lact,
-    lact_group = case_when(
-      lact_number == 1 ~ "Lact 1", lact_number == 2 ~ "Lact 2",
-      lact_number >= 3 ~ "Lact 3+", TRUE ~ NA_character_
-    ),
-    date_fresh, date_dry, date_archive
-  ) %>%
-  filter(!is.na(lact_group))
-
-own_bred_events <- events_formatted %>%
-  filter(event == "BRED") %>%
-  transmute(herd_label = own_herd_label(id_animal), cowid_lact = id_animal_lact, date_event, R)
-
-own_herds <- sort(unique(own_bred_events$herd_label))
-
-# DNB dates per cow-lactation. The full event stream is available for own
-# herds (unlike the peer extract), so IR/PR can optionally drop cows from
-# their first DNB event onward.
-own_dnb_dates <- events_formatted %>%
-  filter(toupper(event) == "DNB", !is.na(date_event)) %>%
-  group_by(cowid_lact = id_animal_lact) %>%
-  summarise(date_dnb = min(date_event), .groups = "drop")
-
-# Month range and date_max_pull are per herd — pulls can be days or weeks
-# apart, and sharing a calendar range would fabricate empty months.
-compute_own_ir_pr <- function(dnb_dates = NULL) {
-  map_dfr(own_herds, function(h) {
-    bred_h <- own_bred_events %>% filter(herd_label == h)
-    lact_h <- own_lact_data %>% filter(herd_label == h)
-    months_h <- seq(
-      floor_date(min(bred_h$date_event, na.rm = TRUE), "month"),
-      floor_date(max(bred_h$date_event, na.rm = TRUE), "month"),
-      by = "month"
-    )
-    fxn_monthly_ir_pr(lact_h, bred_h, months_h, VWP, dnb_dates = dnb_dates) %>%
-      mutate(herd_label = h)
-  })
-}
-own_ir_pr_monthly      <- compute_own_ir_pr()
-own_ir_pr_monthly_nodnb <- compute_own_ir_pr(own_dnb_dates)
-
-own_rebreed_monthly <- own_bred_events %>%
-  filter(!is.na(date_event)) %>%
-  mutate(month = floor_date(date_event, "month")) %>%
-  group_by(herd_label, month) %>%
-  summarise(n_total_bred = n(), n_rebreeds = sum(R == "R", na.rm = TRUE), .groups = "drop")
-
-own_abortion_monthly <- own_bred_events %>%
-  fxn_standardize_for_CR() %>%
-  filter(Rstandard %in% c("std_Pregnant", "std_Abort")) %>%
-  mutate(month = floor_date(date_event, "month")) %>%
-  group_by(herd_label, month) %>%
-  summarise(total_pregnancies = n(), n_abortions = sum(Rstandard == "std_Abort"), .groups = "drop")
-
-own_date_max_pull <- max(own_bred_events$date_event, na.rm = TRUE)
-own_dim_milestone <- map_dfr(own_herds, function(h) {
-  bred_h <- own_bred_events %>% filter(herd_label == h)
-  lact_h <- own_lact_data %>% filter(herd_label == h)
-  dmp_h  <- max(bred_h$date_event, na.rm = TRUE)
-  bind_rows(
-    fxn_dim_milestone(lact_h, bred_h, 100, dmp_h),
-    fxn_dim_milestone(lact_h, bred_h, 150, dmp_h),
-    fxn_dim_milestone(lact_h, bred_h, 200, dmp_h)
-  ) %>% mutate(herd_label = h)
-})
+own_cr_monthly          <- own_data$cr_monthly
+own_ir_pr_monthly       <- own_data$ir_pr_monthly
+own_ir_pr_monthly_nodnb <- own_data$ir_pr_monthly_dnbx
+own_rebreed_monthly     <- own_data$rebreed_monthly
+own_abortion_monthly    <- own_data$abortion_monthly
+own_dim_milestone       <- own_data$dim_milestone
+own_meta                <- own_data$meta
+own_herds               <- sort(unique(own_ir_pr_monthly$herd_label))
+own_date_max_pull       <- max(own_meta$date_max_event)
 
 # One stable color per own herd (solid lines); the peer population is always
 # grey + dashed so your herds carry the color.
@@ -457,17 +383,16 @@ ui <- page_sidebar(
 
   sidebar = sidebar(
     title = "Settings",
-    checkboxGroupInput("own_herds", "Your herds:",
+    tags$h6("Herds & lactation groups"),
+    checkboxGroupInput("own_herds", NULL,
                         choices = own_herds, selected = own_herds),
-    checkboxGroupInput("lact_groups", "Lactation groups:",
+    checkboxGroupInput("lact_groups", NULL,
                         choices = LACT_GROUPS, selected = LACT_GROUPS),
-    numericInput("n_months", "Months of recent data used for ranking:",
-                 value = 12, min = 3, max = 36, step = 1),
-    numericInput("min_deno", "Exclude peer herds below this denominator in that window:",
-                 value = 30, min = 0, max = 200, step = 10),
+    hr(),
+    tags$h6("Trend display"),
     sliderInput("loess_span", "Trend sensitivity:",
                 min = 0.1, max = 1, value = 0.5, step = 0.05),
-    helpText("Loess span for the trend lines — lower follows the data more closely."),
+    helpText("Loess span — lower follows the data more closely."),
     checkboxInput("show_points", "Show monthly points", value = TRUE),
     checkboxInput("show_se", "Show trend confidence band", value = FALSE),
     checkboxInput("exclude_dnb",
@@ -475,30 +400,31 @@ ui <- page_sidebar(
                   else "Exclude DNB cows from my herds (peers unchanged)",
                   value = FALSE),
     if (have_peer_dnbx) {
-      helpText("DNB exclusion drops each cow from IR/PR eligibility from her",
-               "first DNB event onward — applied identically to your herds and",
-               "every peer herd (benchmark_data_v2), so the comparison stays",
-               "symmetric either way.")
+      helpText("Drops each cow from IR/PR eligibility from her first DNB event",
+               "onward — applied identically to your herds and every peer herd,",
+               "so the comparison stays symmetric either way.")
     } else {
-      helpText("DNB exclusion uses your herds' own DNB events for IR/PR eligibility.",
-               "The peer extract has no DNB events, so the peer line keeps the",
-               "proxy definition — with this on, your herds gain a definitional",
-               "edge in IR/PR trends and rankings.")
+      helpText("Uses your herds' own DNB events; the peer extract has none, so",
+               "with this on your herds gain a definitional edge in IR/PR.")
     },
+    hr(),
+    tags$h6("Ranking window"),
+    numericInput("n_months", "Months of recent data used for ranking:",
+                 value = 12, min = 3, max = 36, step = 1),
+    numericInput("min_deno", "Exclude peer herds below this denominator in that window:",
+                 value = 30, min = 0, max = 200, step = 10),
+    hr(),
+    tags$h6("Edge trimming"),
     numericInput("trim_recent", "Drop most recent months (outcome lag):",
                  value = 2, min = 0, max = 12, step = 1),
     numericInput("min_frac_pct", "Minimum month size (% of a line's typical denominator):",
                  value = 50, min = 0, max = 100, step = 10),
-    helpText("Edge trimming: recent months read falsely low because pregnancy",
-             "diagnoses lag breedings, and a line's earliest months can be thin",
-             "(ramp-in). Trimmed months are excluded from the trend lines but",
-             "still show as hollow points."),
+    helpText("Recent months read falsely low (pregnancy diagnoses lag breedings)",
+             "and a line's earliest months can be thin (ramp-in). Trimmed months",
+             "leave the trend lines but still show as hollow points."),
     hr(),
-    helpText(sprintf("Peer population: %d anonymized herds from data/parnell_files.", n_peer_herds)),
-    helpText("Peer herds are identified only as Peer-001, Peer-002, etc. No herd name,",
-             "farm name, address, or ID is loaded by this app."),
-    helpText("Insemination Rate and Pregnancy Rate here use a proxy eligibility method",
-             "(see About) — they will differ slightly from ParnellRepro's own numbers.")
+    helpText(sprintf("Peer population: %d anonymized herds (Peer-001…). No herd name,", n_peer_herds),
+             "farm name, address, or ID is loaded by this app.")
   ),
 
   navset_card_tab(
@@ -508,17 +434,23 @@ ui <- page_sidebar(
         fill = FALSE,
         value_box("Your herds", as.character(length(own_herds))),
         value_box("Peer herds", as.character(n_peer_herds)),
-        value_box("Own data range", paste(format(min(own_bred_events$date_event, na.rm = TRUE), "%b %Y"),
-                                           "–", format(own_date_max_pull, "%b %Y")))
+        value_box("Own data through", format(own_date_max_pull, "%b %d, %Y")),
+        value_box("Peer file built", peer_built)
+      ),
+      card(
+        card_header("Data currency by herd"),
+        gt_output("meta_table")
       ),
       card(
         card_header("What's here"),
         markdown(paste(
-          "Six reproductive measures, each showing your herds' own monthly trends against the",
-          "pooled peer population, and where each herd's recent performance ranks among the",
-          "451 peer herds: **Insemination Rate**, **Conception Rate**, **Pregnancy Rate**,",
+          sprintf("Six reproductive measures, each showing your herds' own monthly trends against the"),
+          sprintf("pooled peer population, and where each herd's recent performance ranks among the"),
+          sprintf("%d peer herds: **Insemination Rate**, **Conception Rate**, **Pregnancy Rate**,", n_peer_herds),
           "**Rebreed Rate**, **Abortion Rate**, and **DIM Milestones** (100/150/200 days).",
-          "See the **About** tab for definitions, data sources, and the method's limitations."
+          "Trend lines are denominator-weighted loess fits with noisy edge months trimmed",
+          "(shown hollow); the DNB toggle switches IR/PR to a do-not-breed-aware eligibility",
+          "on both sides. See the **About** tab for definitions, data sources, and limitations."
         ))
       )
     ),
@@ -561,32 +493,42 @@ ui <- page_sidebar(
           "a month, herd-wide.",
           "",
           "**Insemination Rate** and **Pregnancy Rate** need an eligible-cow denominator —",
-          "which cows COULD have been bred that month. ParnellRepro/app.R derives that from a",
-          "cow's most recent OPEN/BRED/DNB *event*. The peer extract ships BRED events only, so",
-          "here eligibility is derived instead from each BRED event's own **R outcome code**",
-          "(P/A/O/R/E): a cow is treated as presumed pregnant from a Pregnant-coded breeding",
-          "until her next BRED event of any code, or until she goes dry/is archived. She is",
-          "eligible if lactating, freshened, not dry/archived, and past the voluntary waiting",
-          "period (50 days) — see `functions/fxn_parnell_eligibility.R`. This proxy cannot see a",
-          "DNB flag or a heat observed but not bred, so it will read slightly more permissive",
-          "than ParnellRepro's own IR/PR. The same proxy is applied to Monte Vista here so both",
-          "sides of the comparison use one method.",
+          "which cows COULD have been bred that month. Eligibility here is derived from each",
+          "BRED event's own **R outcome code** (P/A/O/R/E): a cow is presumed pregnant from a",
+          "Pregnant-coded breeding until her next BRED event of any code, and is eligible if",
+          "lactating, freshened, not dry/archived, and past the voluntary waiting period",
+          "(50 days) — see `functions/fxn_parnell_eligibility.R`. The **Exclude DNB cows**",
+          "toggle additionally drops each cow from her first do-not-breed event onward,",
+          "**identically on both sides** (own herds and every peer herd), so planned culls kept",
+          "milking don't dilute the denominator — this matters most for Lact 3+.",
+          "",
+          "**Trend lines** are denominator-weighted loess fits (the Trend sensitivity slider is",
+          "the loess span). Noisy edge months are trimmed from the fits but still drawn as",
+          "hollow points: the most recent months (outcome-lag: pregnancy diagnoses trail",
+          "breedings), and months thinner than a settable fraction of that line's typical",
+          "denominator (ramp-in). Each line shows the 3 years ending at its last kept month.",
           "",
           "**DIM Milestones** (100/150/200 days) — a calving cohort counts toward a milestone's",
           "denominator only once every cow in it could have reached that many days in milk;",
           "the numerator is a confirmed pregnancy (Pregnant/Aborted) recorded by that DIM.",
           "",
-          "**Peer data.** `data/parnell_files/silver` holds one `events_bred.parquet` and one",
-          "`animal_lactations.parquet` per herd across 451 herds with usable data.",
-          "`build_parnell_benchmark.R` reads only those two files per herd, computes every",
-          "measure above by month (and lactation group, where relevant), strips every",
-          "identifying column (herd name, farm name, address, HerdKey), and relabels each herd",
-          "Peer-001..Peer-451 in an order that carries no information about the herd itself.",
-          "That anonymized summary — not the raw peer data — is what this app reads.",
+          "**Peer data** comes from `data/parnell_files/benchmark_data_v2.rds`, built by",
+          "`build_parnell_benchmark_v2.R` from the Parnell silver layer (Azure blob): each",
+          "herd's complete breeding stream (`events_bred_no_qc_filter.parquet`), lactation",
+          "table, and DNB dates from its full event file. Every measure is computed per herd",
+          "(IR/PR under both the proxy and DNB-excluded definitions), every identifying column",
+          "is stripped, and herds are relabeled Peer-001… in an order that carries no",
+          "information about the herd. That anonymized summary — never the raw peer data — is",
+          "what this app reads.",
           "",
-          "**Ranking window.** Each herd (including Monte Vista) is ranked on its OWN most",
-          "recent N months of data, not a shared calendar cutoff, because peer exports don't",
-          "share a data-currency date."
+          "**Own-herd data** is precomputed the same way by `build_own_benchmark.R` into",
+          "`data/parnell_files/own_data.rds`: monthly aggregates per herd (labeled by herd-key",
+          "prefix), so the running app needs no cow-level data at all. Rerun that script after",
+          "refreshing the pipeline (steps 0–2) to update the app's data.",
+          "",
+          "**Ranking window.** Each herd (yours and peers) is ranked on its OWN most recent",
+          "N months of data — after dropping its trailing outcome-lag months — rather than a",
+          "shared calendar cutoff, because exports don't share a data-currency date."
         ))
       )
     )
@@ -627,6 +569,14 @@ server <- function(input, output, session) {
   ir_views <- make_rate_views(peer_ir_pr_active, own_ir_pr_active, "n_bred", "n_eligible", active_groups, n_months, min_deno, selected_herds, trim_bred, min_frac)
   cr_views <- make_rate_views(reactive(peer_cr), reactive(own_cr_monthly), "preg", "deno", active_groups, n_months, min_deno, selected_herds, trim_outcome, min_frac)
   pr_views <- make_rate_views(peer_ir_pr_active, own_ir_pr_active, "n_pregnant", "n_eligible", active_groups, n_months, min_deno, selected_herds, trim_outcome, min_frac)
+
+  output$meta_table <- render_gt({
+    own_meta %>%
+      gt() %>%
+      cols_label(herd_label = "Herd", date_min_event = "First event", date_max_event = "Last event") %>%
+      fmt_date(columns = c(date_min_event, date_max_event), date_style = "yMMMd") %>%
+      tab_options(table.border.left.style = "none")
+  })
 
   attach_rate_outputs(output, "ir_", ir_views, "Insemination Rate", loess_span, show_points, show_se)
   attach_rate_outputs(output, "cr_", cr_views, "Conception Rate", loess_span, show_points, show_se)

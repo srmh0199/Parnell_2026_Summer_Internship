@@ -46,6 +46,14 @@ Run everything from the repo root (paths are relative or `here::here()`).
    lactation groups, and how many recent periods to drop from the trend graphs. Run
    with `shiny::runApp("ParnellRepro")` from the project root. Unlike the report it
    does **not** source the GitHub "os" functions, so it runs offline.
+7. **`ParnellBenchmark/app.R`** — the cross-herd benchmarking app: the client
+   herds vs. 457 anonymized peers. Reads two precomputed aggregate files from
+   `data/parnell_files/`: `own_data.rds` (built by `build_own_benchmark.R` from the
+   intermediate parquet; falls back to computing live if absent) and
+   `benchmark_data_v2.rds` (built by `build_parnell_benchmark_v2.R` from the silver
+   Azure blob; `benchmark_data.rds` is the older v1 fallback). Run with
+   `shiny::runApp("ParnellBenchmark")`. `deploy/` holds a Docker bundle for Parnell
+   Azure hosting — no cow-level data ships in the image (`.dockerignore` whitelist).
 
 `functions/` holds `fxn_*.R` helpers; most come from the shared template.
 Sarah-authored ones are `fxn_denos_sarah.R` (yearly herd denominators) and
