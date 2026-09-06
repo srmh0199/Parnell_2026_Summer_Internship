@@ -481,55 +481,115 @@ ui <- page_sidebar(
 
     nav_panel(
       "About",
-      card(
-        card_header("What this app shows"),
-        markdown(paste(
-          "**Conception Rate (CR)** = confirmed-pregnant-or-aborted breedings divided by all",
-          "breedings with a usable outcome (Pregnant + Aborted + Open) — ambiguous outcome codes",
-          "are excluded from both the numerator and denominator, following the standard Parnell",
-          "CR definition (`fxn_standardize_for_CR` / `fxn_calculate_CR_main`, vendored offline in",
-          "`functions/fxn_parnell_cr.R`). **Rebreed Rate** and **Abortion Rate** use the same R",
-          "outcome codes (`R == \"R\"`, and Abort/(Pregnant+Abort)) applied to all BRED events in",
-          "a month, herd-wide.",
-          "",
-          "**Insemination Rate** and **Pregnancy Rate** need an eligible-cow denominator —",
-          "which cows COULD have been bred that month. Eligibility here is derived from each",
-          "BRED event's own **R outcome code** (P/A/O/R/E): a cow is presumed pregnant from a",
-          "Pregnant-coded breeding until her next BRED event of any code, and is eligible if",
-          "lactating, freshened, not dry/archived, and past the voluntary waiting period",
-          "(50 days) — see `functions/fxn_parnell_eligibility.R`. The **Exclude DNB cows**",
-          "toggle additionally drops each cow from her first do-not-breed event onward,",
-          "**identically on both sides** (own herds and every peer herd), so planned culls kept",
-          "milking don't dilute the denominator — this matters most for Lact 3+.",
-          "",
-          "**Trend lines** are denominator-weighted loess fits (the Trend sensitivity slider is",
-          "the loess span). Noisy edge months are trimmed from the fits but still drawn as",
-          "hollow points: the most recent months (outcome-lag: pregnancy diagnoses trail",
-          "breedings), and months thinner than a settable fraction of that line's typical",
-          "denominator (ramp-in). Each line shows the 3 years ending at its last kept month.",
-          "",
-          "**DIM Milestones** (100/150/200 days) — a calving cohort counts toward a milestone's",
-          "denominator only once every cow in it could have reached that many days in milk;",
-          "the numerator is a confirmed pregnancy (Pregnant/Aborted) recorded by that DIM.",
-          "",
-          "**Peer data** comes from `data/parnell_files/benchmark_data_v2.rds`, built by",
-          "`build_parnell_benchmark_v2.R` from the Parnell silver layer (Azure blob): each",
-          "herd's complete breeding stream (`events_bred_no_qc_filter.parquet`), lactation",
-          "table, and DNB dates from its full event file. Every measure is computed per herd",
-          "(IR/PR under both the proxy and DNB-excluded definitions), every identifying column",
-          "is stripped, and herds are relabeled Peer-001… in an order that carries no",
-          "information about the herd. That anonymized summary — never the raw peer data — is",
-          "what this app reads.",
-          "",
-          "**Own-herd data** is precomputed the same way by `build_own_benchmark.R` into",
-          "`data/parnell_files/own_data.rds`: monthly aggregates per herd (labeled by herd-key",
-          "prefix), so the running app needs no cow-level data at all. Rerun that script after",
-          "refreshing the pipeline (steps 0–2) to update the app's data.",
-          "",
-          "**Ranking window.** Each herd (yours and peers) is ranked on its OWN most recent",
-          "N months of data — after dropping its trailing outcome-lag months — rather than a",
-          "shared calendar cutoff, because exports don't share a data-currency date."
-        ))
+      accordion(
+        open = "The six measures",
+
+        accordion_panel(
+          "The six measures",
+          markdown(paste(
+            "- **Conception rate (CR)** — pregnant-or-aborted breedings ÷ breedings with a",
+            "  usable outcome (Pregnant + Aborted + Open). Ambiguous outcome codes are excluded",
+            "  from both sides — the standard Parnell CR definition (`functions/fxn_parnell_cr.R`).",
+            "\n- **Insemination rate (IR)** — eligible cows bred that month ÷ eligible cows.",
+            "\n- **Pregnancy rate (PR)** — eligible cows confirmed pregnant that month ÷ eligible cows.",
+            "\n- **Rebreed rate** — breedings coded `R` ÷ all breedings, monthly, herd-wide.",
+            "\n- **Abortion rate** — aborted ÷ (pregnant + aborted), grouped by the month the cow",
+            "  was **bred** (a cohort, not the calendar month of the abortion).",
+            "\n- **DIM milestones** — share of a calving cohort confirmed pregnant by 100 / 150 /",
+            "  200 days in milk."
+          ))
+        ),
+
+        accordion_panel(
+          "Who counts as eligible (IR and PR)",
+          markdown(paste(
+            "Eligibility is derived from each BRED event's own **R outcome code** (P/A/O/R/E),",
+            "so the same rule can run on the peer extract, which has no OPEN events.",
+            "",
+            "A cow is **eligible** in a month when she is:",
+            "",
+            "- lactating and freshened before the month's end,",
+            "- not dry and not archived,",
+            "- past the 50-day voluntary waiting period,",
+            "- not presumed pregnant — a Pregnant-coded breeding marks her pregnant until her",
+            "  next BRED event of any code.",
+            "",
+            "Details: `functions/fxn_parnell_eligibility.R`."
+          ))
+        ),
+
+        accordion_panel(
+          "The DNB toggle",
+          markdown(paste(
+            "**Exclude DNB cows** additionally drops each cow from eligibility from her first",
+            "**do-not-breed** event onward — applied **identically to your herds and every peer",
+            "herd**, so the comparison stays symmetric with the toggle on or off.",
+            "",
+            "Why it exists: planned culls kept milking sit in the denominator never getting",
+            "bred, which reads as a falsely low IR/PR. The effect is largest for **Lact 3+**."
+          ))
+        ),
+
+        accordion_panel(
+          "Trend lines and edge trimming",
+          markdown(paste(
+            "Trend lines are **denominator-weighted loess fits**; the *Trend sensitivity*",
+            "slider is the loess span (lower = follows the data more closely).",
+            "",
+            "Noisy edge months are left out of the fit but still drawn as **hollow points**:",
+            "",
+            "- the most recent months, where pregnancy diagnoses haven't caught up with",
+            "  breedings yet (*Drop most recent months*),",
+            "- months thinner than a set share of that line's typical denominator, e.g. the",
+            "  ramp-in at the start of an export (*Minimum month size*).",
+            "",
+            "Each line shows the **3 years** ending at its last kept month."
+          ))
+        ),
+
+        accordion_panel(
+          "How ranking works (Where It Sits)",
+          markdown(paste(
+            "Each herd — yours and every peer — is ranked on its **own most recent N months**",
+            "(*Months of recent data*), after dropping its trailing outcome-lag months; exports",
+            "don't share a data-currency date, so a shared calendar cutoff would be unfair.",
+            "",
+            "- Herds below the denominator floor for the window are excluded (*Exclude peer",
+            "  herds below…*).",
+            "- Ranking uses the **lower bound of each herd's confidence interval**, not the raw",
+            "  rate, so a small noisy herd can't top the table by chance.",
+            "- Bands are **quintiles of the current peer population** — one fifth of herds is",
+            "  always in the bottom band, however well everyone is doing."
+          ))
+        ),
+
+        accordion_panel(
+          "Peer data and anonymization",
+          markdown(paste(
+            "Peer data is a precomputed summary (`data/parnell_files/benchmark_data_v2.rds`)",
+            "built by `build_parnell_benchmark_v2.R` from the Parnell silver layer:",
+            "",
+            "- each herd's **complete breeding stream** (`events_bred_no_qc_filter.parquet`),",
+            "  lactation table, and DNB dates from its full event file,",
+            "- every measure computed per herd, IR/PR under **both** definitions,",
+            "- every identifying column stripped (assertion-checked at build time), herds",
+            "  relabeled **Peer-001…** in an order that carries no information.",
+            "",
+            "The app only ever reads that anonymized summary — never raw peer data."
+          ))
+        ),
+
+        accordion_panel(
+          "Own-herd data and refreshing",
+          markdown(paste(
+            "Your herds are precomputed the same way by `build_own_benchmark.R` into",
+            "`data/parnell_files/own_data.rds` — monthly aggregates per herd, labeled by",
+            "herd-key prefix. The running app needs **no cow-level data**.",
+            "",
+            "To refresh after a new export: run the pipeline (step 0), then",
+            "`Rscript build_own_benchmark.R`. The Overview tab shows each herd's data currency."
+          ))
+        )
       )
     )
   )
