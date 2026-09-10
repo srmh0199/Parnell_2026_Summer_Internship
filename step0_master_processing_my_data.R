@@ -46,6 +46,9 @@ source("functions/fxn_treatment.R")
 ## If you choose to use custom functions you must source them when you assign them
 
 ### animal id  (turn on only one of these lines) ---------
+# _parnell is the committed default: all current herds are on the DIM-chunked
+# Parnell export format. Flip to _default locally if you're processing a
+# non-chunked export.
 #fxn_assign_id_animal <- fxn_assign_id_animal_default
 fxn_assign_id_animal <- fxn_assign_id_animal_parnell
 
