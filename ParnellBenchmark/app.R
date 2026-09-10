@@ -173,6 +173,17 @@ window_display <- function(df, ..., n_years = 3, time_col = month) {
     ungroup()
 }
 
+# Each line above is windowed independently to ITS OWN last 3 years, so a
+# peer line can still extend years before your herd's own data starts (the
+# peer file's history runs much longer than a newly onboarded herd's). Clips
+# the combined trend data to the calendar span your SELECTED herd(s) actually
+# have data for, so the chart never implies a comparison for a period your
+# herd has no data in.
+clip_to_own_span <- function(df, bounds, time_col = month) {
+  if (is.na(bounds$lo) || is.na(bounds$hi)) return(df)
+  df %>% filter({{ time_col }} >= bounds$lo, {{ time_col }} <= bounds$hi)
+}
+
 # =========================================================================
 # Shared calculation helpers
 # =========================================================================
@@ -199,7 +210,7 @@ five_band <- function(x, breaks) {
 # ranking, distribution) so Insemination/Conception/Pregnancy Rate don't
 # each repeat the same reactive logic under a different measure name.
 make_rate_views <- function(peer_df, own_df, k_col, n_col, active_groups, n_months, min_deno, selected_herds,
-                            trim_lag, min_frac) {
+                            trim_lag, min_frac, own_bounds) {
   # own_df and peer_df are both REACTIVES so the DNB-exclusion toggle can
   # swap either side's table.
   trend_data <- reactive({
@@ -213,7 +224,8 @@ make_rate_views <- function(peer_df, own_df, k_col, n_col, active_groups, n_mont
     bind_rows(peer_line, own_line) %>%
       filter(n > 0) %>%
       flag_edge_months(trim_recent = trim_lag(), min_frac = min_frac(), lact_group) %>%
-      window_display(lact_group)
+      window_display(lact_group) %>%
+      clip_to_own_span(own_bounds())
   })
 
   peer_ranked <- reactive({
@@ -565,7 +577,10 @@ ui <- page_sidebar(
             "- months thinner than a set share of that line's typical denominator, e.g. the",
             "  ramp-in at the start of an export (*Minimum month size*).",
             "",
-            "Each line shows the **3 years** ending at its last kept month."
+            "Each line shows the **3 years** ending at its last kept month — but never earlier",
+            "than your selected herd(s)' own data starts. The peer population's history",
+            "usually runs longer than a single herd's export, so without this clip the peer",
+            "line could extend years before your herd had any data to compare against."
           ))
         ),
 
@@ -632,6 +647,17 @@ server <- function(input, output, session) {
     req(length(input$own_herds) > 0)
     input$own_herds
   })
+  # Calendar span your SELECTED herd(s) actually have data for, used to clip
+  # every trend chart so a longer-history peer line can't extend before your
+  # herd's own data starts. See clip_to_own_span().
+  own_bounds <- reactive({
+    own_meta %>%
+      filter(herd_label %in% selected_herds()) %>%
+      summarise(
+        lo = floor_date(min(date_min_event, na.rm = TRUE), "month"),
+        hi = floor_date(max(date_max_event, na.rm = TRUE), "month")
+      )
+  })
   loess_span  <- reactive({ req(!is.na(input$loess_span)); input$loess_span })
   show_points <- reactive({ isTRUE(input$show_points) })
   show_se     <- reactive({ isTRUE(input$show_se) })
@@ -648,9 +674,9 @@ server <- function(input, output, session) {
     if (isTRUE(input$exclude_dnb) && have_peer_dnbx) peer_ir_pr_dnbx else peer_ir_pr
   })
 
-  ir_views <- make_rate_views(peer_ir_pr_active, own_ir_pr_active, "n_bred", "n_eligible", active_groups, n_months, min_deno, selected_herds, trim_bred, min_frac)
-  cr_views <- make_rate_views(reactive(peer_cr), reactive(own_cr_monthly), "preg", "deno", active_groups, n_months, min_deno, selected_herds, trim_outcome, min_frac)
-  pr_views <- make_rate_views(peer_ir_pr_active, own_ir_pr_active, "n_pregnant", "n_eligible", active_groups, n_months, min_deno, selected_herds, trim_outcome, min_frac)
+  ir_views <- make_rate_views(peer_ir_pr_active, own_ir_pr_active, "n_bred", "n_eligible", active_groups, n_months, min_deno, selected_herds, trim_bred, min_frac, own_bounds)
+  cr_views <- make_rate_views(reactive(peer_cr), reactive(own_cr_monthly), "preg", "deno", active_groups, n_months, min_deno, selected_herds, trim_outcome, min_frac, own_bounds)
+  pr_views <- make_rate_views(peer_ir_pr_active, own_ir_pr_active, "n_pregnant", "n_eligible", active_groups, n_months, min_deno, selected_herds, trim_outcome, min_frac, own_bounds)
 
   output$meta_table <- render_gt({
     own_meta %>%
@@ -673,7 +699,8 @@ server <- function(input, output, session) {
     ) %>%
       filter(n > 0) %>%
       flag_edge_months(trim_recent = trim_bred(), min_frac = min_frac()) %>%
-      window_display()
+      window_display() %>%
+      clip_to_own_span(own_bounds())
   })
 
   output$rebreed_trend_plot <- renderPlot({
@@ -706,7 +733,8 @@ server <- function(input, output, session) {
     ) %>%
       filter(n > 0) %>%
       flag_edge_months(trim_recent = trim_outcome(), min_frac = min_frac()) %>%
-      window_display()
+      window_display() %>%
+      clip_to_own_span(own_bounds())
   })
 
   output$abortion_trend_plot <- renderPlot({
@@ -743,7 +771,8 @@ server <- function(input, output, session) {
       # fxn_dim_milestone already trims right-censored cohorts, so no
       # trailing trim here — just the thin-denominator floor.
       flag_edge_months(trim_recent = 0L, min_frac = min_frac(), milestone, time_col = calving_month) %>%
-      window_display(milestone, time_col = calving_month)
+      window_display(milestone, time_col = calving_month) %>%
+      clip_to_own_span(own_bounds(), time_col = calving_month)
   })
 
   output$dim_plot <- renderPlot({
