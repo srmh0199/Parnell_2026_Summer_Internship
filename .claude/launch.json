@@ -3,7 +3,7 @@
   "configurations": [
     {
       "name": "parnell-benchmark",
-      "runtimeExecutable": "C:\\Program Files\\R\\R-4.5.0\\bin\\Rscript.exe",
+      "runtimeExecutable": "C:\\Program Files\\R\\R-4.5.1\\bin\\Rscript.exe",
       "runtimeArgs": ["run_parnell_benchmark.R"],
       "port": 7789,
       "autoPort": true
