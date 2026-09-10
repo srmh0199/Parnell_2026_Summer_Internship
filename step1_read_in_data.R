@@ -111,8 +111,8 @@ write_csv(template_event_type, 'data/template_files/template_event_details.csv')
 #define event types------------------------------------
 events2 <-events2|>
   #fix na values-------------
-mutate(technician = Technician, 
-       eid = EID)|> 
+mutate(technician = Technician,
+       eid = if ("EID" %in% names(events2)) EID else NA_character_)|>
   
   mutate(across(
     .cols = c(event_type, breed, location_event, locate_lesion, technician, eid), 

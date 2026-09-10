@@ -116,3 +116,34 @@ Constraints / things to know:
 - Client herd data must never be committed (see data/.gitignore); the repo is hosted at
   srmh0199 and the raw CSV was purged from history on 2026-07-22.
 ```
+
+## 2026-08-27 .. 2026-09-06 - Multi-herd benchmark, DNB exclusion, v2 peers, shinyapps deploy (Nora + Claude)
+
+- Diagnosed broken IR/PR on the new 3-herd Parnell exports: the default animal-ID
+  function keys on full file path, and the new exports are DIM-chunked (~85 files/herd),
+  fragmenting every cow into one identity per chunk (602k of 630k "animals" had one
+  lactation; eligible denominators ~20x too big, IR read ~3%). Fix: step0 now uses
+  fxn_assign_id_animal_parnell (herd-GUID prefix). step1 also tolerates missing EID.
+- ParnellBenchmark rework: per-herd lines + selector (GUID prefix from the parnell id),
+  denominator-weighted loess trends with a span slider, points/SE toggles, edge trimming
+  (trailing outcome-lag months + thin-month floor, trimmed months drawn hollow), trims
+  applied to rankings, 3-year display window per line, peers always grey.
+- DNB finding: ~44% of "eligible" Lact 3+ cows in 2023-24 were DNB'd planned culls,
+  dragging apparent IR to ~37% vs a true ~66-71%. Added optional dnb_dates to
+  fxn_monthly_eligible/fxn_monthly_ir_pr and an app toggle.
+- Peer benchmark v2 (build_parnell_benchmark_v2.R -> benchmark_data_v2.rds): rebuilt
+  from the silver-files Azure blob (458 herds downloaded, 457 usable), breedings from
+  events_bred_no_qc_filter (the QC-filtered file drops early-window lactations - Nora),
+  DNB dates from each herd's full events.parquet, IR/PR shipped under BOTH definitions
+  so the DNB toggle is symmetric. Proxy IR matches v1 within 0.2 points. Supports
+  chunked runs (HERD_START/HERD_END/CHUNK_DIR/FINALIZE).
+- Precompute + deploy: build_own_benchmark.R -> own_data.rds (30 KB aggregates; app
+  startup ~90s -> ~2s, no cow-level data needed at runtime). About tab rebuilt as an
+  accordion outline; Overview shows per-herd data currency; cards fill=FALSE + compact
+  value boxes. deploy/ holds an Azure Docker bundle (unused for now); actual deployment
+  went to shinyapps.io via deploy_shinyapps.R (self-contained app folder, parnell
+  account, mySYNCH pattern): https://parnell.shinyapps.io/IRandPR_plus/
+- Gotchas learned: detached (Start-Process) Rscript doing sustained work dies silently
+  on this machine - run long R jobs foreground/chunked; shinyapps allows one deploy at
+  a time per app ("transient" POST error means wait); launch.json now has THIS
+  machine's R 4.5.0 path (Sarah's has 4.5.1 - machine-specific, flip as needed).

@@ -1,0 +1,10 @@
+name: IRandPR_plus
+title:
+username: parnell
+account: parnell
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 17836930
+bundleId: 12515202
+url: https://parnell.shinyapps.io/IRandPR_plus/
+version: 1
